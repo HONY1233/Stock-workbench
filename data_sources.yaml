@@ -1,0 +1,606 @@
+# 数据源配置文件
+# 修改此文件即可增删数据源，无需改代码
+# 每个源支持: axdata(优先) + akshare(fallback) 双源路由
+#
+# 结构说明:
+#   sources.<name>:
+#     desc: 描述
+#     axdata: 优先数据源（可为 null）
+#       interface: axdata 接口名
+#       param_map: 参数映射 (dict)
+#       symbol_fmt: 代码格式 (tdx/sina/null)
+#     akshare: 备用数据源（可为 null）
+#       func: akshare 函数名
+#       param_map: 参数映射 (dict)
+#       symbol_fmt: 代码格式 (sina/null)
+#       filter_by: 按列过滤 (可选)
+#       drop_params: 丢弃参数列表 (可选)
+#       sina_fallback: 是否回退 sina (可选 bool)
+#       extra: 额外参数 (可选 dict)
+#       translate_fields: 需翻译字段 (可选 list)
+#   custom_sources: 由 sources/ 目录下自定义模块提供的工具列表
+
+sources:
+  # ===== 个股 =====
+  stock_daily:
+    desc: "A股日K线"
+    axdata:
+      interface: stock_zh_a_hist_tx
+      param_map:
+        symbol: code
+      symbol_fmt: tdx
+    akshare:
+      func: stock_zh_a_daily
+      param_map: {}
+      symbol_fmt: sina
+      extra:
+        adjust: qfq
+
+  stock_realtime:
+    desc: "A股实时行情（支持单只或多只代码过滤）"
+    axdata: null
+    akshare:
+      func: stock_zh_a_spot_em
+      param_map: {}
+      symbol_fmt: null
+      filter_by: 代码
+      drop_params: [symbol, code]
+      sina_fallback: true
+
+  # ===== 指数 =====
+  index_daily:
+    desc: "A股指数日K线"
+    axdata: null
+    akshare:
+      func: stock_zh_index_daily
+      param_map: {}
+      symbol_fmt: sina
+
+  index_realtime:
+    desc: "A股指数实时行情"
+    axdata:
+      interface: stock_zh_index_spot_sina
+      param_map: {}
+      symbol_fmt: null
+    akshare:
+      func: stock_zh_index_spot_em
+      param_map: {}
+      symbol_fmt: null
+      drop_params: [symbol, code]
+      sina_fallback: true
+
+  # ===== ETF =====
+  etf_daily:
+    desc: "ETF日K线"
+    axdata:
+      interface: fund_etf_hist_sina
+      param_map: {}
+      symbol_fmt: sina
+    akshare:
+      func: fund_etf_hist_sina
+      param_map: {}
+      symbol_fmt: sina
+
+  etf_realtime:
+    desc: "ETF实时行情"
+    axdata: null
+    akshare:
+      func: fund_etf_spot_em
+      param_map: {}
+      symbol_fmt: null
+      filter_by: 代码
+      drop_params: [symbol, code]
+      sina_fallback: true
+
+  # ===== 期货 =====
+  futures_daily:
+    desc: "期货日线（主力合约）"
+    axdata:
+      interface: futures_main_sina
+      param_map: {}
+      symbol_fmt: null
+    akshare:
+      func: futures_zh_daily_sina
+      param_map: {}
+      symbol_fmt: null
+
+  futures_realtime:
+    desc: "期货实时行情（主力合约展示）"
+    axdata:
+      interface: futures_display_main_sina
+      param_map: {}
+      symbol_fmt: null
+    akshare:
+      func: futures_zh_realtime_sina
+      param_map: {}
+      symbol_fmt: null
+      filter_by: symbol
+      drop_params: [symbol]
+
+  # ===== 涨跌停 / 板块 =====
+  limit_up_pool:
+    desc: "涨停池（含涨停原因、连板数）"
+    axdata:
+      interface: eastmoney_limit_up_pool
+      param_map: {}
+      symbol_fmt: null
+    akshare: null
+
+  limit_down_pool:
+    desc: "跌停池"
+    axdata:
+      interface: eastmoney_limit_down_pool
+      param_map: {}
+      symbol_fmt: null
+    akshare: null
+
+  sector_realtime:
+    desc: "板块实时行情（涨跌幅、主力资金、领涨股）"
+    axdata:
+      interface: eastmoney_sector_realtime
+      param_map: {}
+      symbol_fmt: null
+    akshare: null
+
+  market_index_realtime:
+    desc: "大盘指数实时行情"
+    axdata:
+      interface: eastmoney_market_index_realtime
+      param_map: {}
+      symbol_fmt: null
+    akshare: null
+
+  # ===== 财联社 =====
+  cls_telegraph:
+    desc: "财联社电报快讯"
+    axdata:
+      interface: cls_news_telegraph
+      param_map: {}
+      symbol_fmt: null
+    akshare: null
+
+  cls_market_emotion:
+    desc: "财联社市场情绪（温度、涨跌分布、涨停梯队）"
+    axdata:
+      interface: cls_market_emotion
+      param_map: {}
+      symbol_fmt: null
+    akshare: null
+
+  cls_limit_up_pool:
+    desc: "财联社涨停池（含详细涨停原因）"
+    axdata:
+      interface: cls_limit_up_pool
+      param_map: {}
+      symbol_fmt: null
+    akshare: null
+
+  cls_sector_heat:
+    desc: "财联社板块热度排行"
+    axdata:
+      interface: cls_sector_heat
+      param_map: {}
+      symbol_fmt: null
+    akshare: null
+
+  cls_market_wind:
+    desc: "财联社今日风口板块（含催化原因）"
+    axdata:
+      interface: cls_market_wind
+      param_map: {}
+      symbol_fmt: null
+    akshare: null
+
+  cls_market_mainline:
+    desc: "财联社今日主线机会（含龙头股、逻辑）"
+    axdata:
+      interface: cls_market_mainline
+      param_map: {}
+      symbol_fmt: null
+    akshare: null
+
+  # ===== 开盘红 =====
+  kph_market_emotion:
+    desc: "开盘红市场情绪（真实涨停、ST涨跌、涨跌分布）"
+    axdata:
+      interface: kph_market_emotion
+      param_map: {}
+      symbol_fmt: null
+    akshare: null
+
+  # ===== 龙虎榜 =====
+  lhb_daily:
+    desc: "龙虎榜每日详情"
+    axdata:
+      interface: stock_lhb_detail_daily_sina
+      param_map: {}
+      symbol_fmt: null
+    akshare: null
+
+  lhb_institution:
+    desc: "龙虎榜机构席位明细"
+    axdata:
+      interface: stock_lhb_jgmx_sina
+      param_map: {}
+      symbol_fmt: null
+    akshare: null
+
+  # ===== 期权 =====
+  option_commodity_list:
+    desc: "商品期权品种列表"
+    axdata:
+      interface: option_commodity_contract_sina
+      param_map: {}
+      symbol_fmt: null
+    akshare: null
+
+  option_cffex_hs300_list:
+    desc: "中金所沪深300期权合约列表"
+    axdata:
+      interface: option_cffex_hs300_list_sina
+      param_map: {}
+      symbol_fmt: null
+    akshare: null
+
+  # ===== 巨潮 =====
+  cninfo_announcements:
+    desc: "巨潮公告列表"
+    axdata:
+      interface: cninfo_announcements
+      param_map:
+        symbol: code
+      symbol_fmt: null
+    akshare: null
+
+  stock_profile_cninfo:
+    desc: "公司概况（巨潮）"
+    axdata:
+      interface: stock_profile_cninfo
+      param_map:
+        symbol: code
+      symbol_fmt: null
+    akshare: null
+
+  stock_dividend_cninfo:
+    desc: "分红配送（巨潮）"
+    axdata:
+      interface: stock_dividend_cninfo
+      param_map:
+        symbol: code
+      symbol_fmt: null
+    akshare: null
+
+  # ===== 新闻 =====
+  news_cctv:
+    desc: "新闻联播文字稿"
+    axdata: null
+    akshare:
+      func: news_cctv
+      param_map: {}
+      symbol_fmt: null
+      drop_params: [symbol, code]
+
+  economic_calendar:
+    desc: "财经日历（百度）"
+    axdata: null
+    akshare:
+      func: news_economic_baidu
+      param_map: {}
+      symbol_fmt: null
+      drop_params: [symbol, code]
+
+  stock_news:
+    desc: "个股新闻（东方财富）"
+    axdata: null
+    akshare:
+      func: stock_news_em
+      param_map: {}
+      symbol_fmt: null
+
+  # ===== 外围新闻（含英文翻译） =====
+  global_news_em:
+    desc: "全球财经新闻（东方财富，含英文翻译）"
+    axdata: null
+    akshare:
+      func: stock_info_global_em
+      param_map: {}
+      symbol_fmt: null
+      drop_params: [symbol, code]
+      translate_fields: [标题, 摘要]
+
+  global_news_sina:
+    desc: "全球财经快讯（新浪，含英文翻译）"
+    axdata: null
+    akshare:
+      func: stock_info_global_sina
+      param_map: {}
+      symbol_fmt: null
+      drop_params: [symbol, code]
+      translate_fields: [内容]
+
+  global_news_ths:
+    desc: "全球财经新闻（同花顺，含英文翻译）"
+    axdata: null
+    akshare:
+      func: stock_info_global_ths
+      param_map: {}
+      symbol_fmt: null
+      drop_params: [symbol, code]
+      translate_fields: [标题, 内容]
+
+  wallstreet_news:
+    desc: "华尔街见闻财经日历（含英文事件名翻译）"
+    axdata: null
+    akshare:
+      func: macro_info_ws
+      param_map: {}
+      symbol_fmt: null
+      drop_params: [symbol, code]
+      translate_fields: [事件, 地区]
+
+  futures_news_shmet:
+    desc: "上海期货交易所新闻（含英文翻译）"
+    axdata: null
+    akshare:
+      func: futures_news_shmet
+      param_map: {}
+      symbol_fmt: null
+      drop_params: [symbol, code]
+      translate_fields: [内容]
+
+  # ===== 外围指数（补充实时行情） =====
+  index_us_daily:
+    desc: "美股指数日线（道琼斯/纳斯达克/标普500）"
+    axdata:
+      interface: index_us_stock_sina
+      param_map: {}
+      symbol_fmt: null
+    akshare:
+      func: index_us_stock_sina
+      param_map: {}
+      symbol_fmt: null
+
+  index_hk_daily:
+    desc: "港股指数日线（恒生/国企/恒生科技）"
+    axdata:
+      interface: stock_hk_index_daily_sina
+      param_map: {}
+      symbol_fmt: null
+    akshare:
+      func: stock_hk_index_daily_sina
+      param_map: {}
+      symbol_fmt: null
+
+  index_global_list:
+    desc: "全球指数代码表"
+    axdata: null
+    akshare:
+      func: index_global_name_table
+      param_map: {}
+      symbol_fmt: null
+      drop_params: [symbol, code]
+
+  futures_global_spot:
+    desc: "全球期货实时行情（CBOT/NYMEX/COMEX/LME）"
+    axdata: null
+    akshare:
+      func: futures_global_spot_em
+      param_map: {}
+      symbol_fmt: null
+      drop_params: [symbol, code]
+
+  etf_spot:
+    desc: "ETF实时行情列表"
+    axdata: null
+    akshare:
+      func: fund_etf_spot_em
+      param_map: {}
+      symbol_fmt: null
+      drop_params: [symbol, code]
+      filter_by: 代码
+
+  # ===== Reuters / Bloomberg 新闻源 =====
+  reuters_news:
+    desc: "路透社相关财经新闻（含英文翻译）"
+    axdata: null
+    akshare: null
+
+  bloomberg_news:
+    desc: "彭博社相关财经新闻（含英文翻译）"
+    axdata: null
+    akshare: null
+
+  bloomberg_billionaires:
+    desc: "彭博亿万富豪榜"
+    axdata: null
+    akshare:
+      func: index_bloomberg_billionaires
+      param_map: {}
+      symbol_fmt: null
+      drop_params: [symbol, code]
+
+  global_news_search:
+    desc: "全球财经新闻搜索（支持 Reuters/Bloomberg/关键词）"
+    axdata: null
+    akshare: null
+
+  # ===== a-stock-data 补充信息源 =====
+  tencent_realtime_quote:
+    desc: "腾讯财经实时行情（PE/PB/市值/换手率/涨跌停价，不封IP）"
+    axdata: null
+    akshare: null
+
+  northbound_flow:
+    desc: "北向资金(沪深港通)实时流向"
+    axdata: null
+    akshare:
+      func: stock_hsgt_individual_em
+      param_map: {}
+      symbol_fmt: null
+      drop_params: [symbol, code]
+
+  stock_fund_flow:
+    desc: "个股资金流向（主力/大单/中单/小单）"
+    axdata: null
+    akshare:
+      func: stock_individual_fund_flow
+      param_map: {}
+      symbol_fmt: null
+      drop_params: []
+
+  margin_trading:
+    desc: "融资融券数据（沪市/深市）"
+    axdata: null
+    akshare:
+      func: stock_margin_sse
+      param_map: {}
+      symbol_fmt: null
+      drop_params: [symbol, code]
+
+  block_trade:
+    desc: "大宗交易数据"
+    axdata: null
+    akshare:
+      func: stock_dzjy_mrmx
+      param_map: {}
+      symbol_fmt: null
+      drop_params: [symbol, code]
+
+  holder_count:
+    desc: "股东户数变化（筹码集中度）"
+    axdata: null
+    akshare:
+      func: stock_zh_a_gdhs
+      param_map: {}
+      symbol_fmt: null
+      drop_params: []
+
+  lockup_release:
+    desc: "限售解禁日历"
+    axdata: null
+    akshare:
+      func: stock_restricted_release_queue_sse
+      param_map: {}
+      symbol_fmt: null
+      drop_params: [symbol, code]
+
+  research_report:
+    desc: "研报列表（个股盈利预测）"
+    axdata: null
+    akshare:
+      func: stock_profit_forecast_ths
+      param_map: {}
+      symbol_fmt: null
+      drop_params: []
+
+  eps_forecast:
+    desc: "一致预期EPS（同花顺）"
+    axdata: null
+    akshare:
+      func: stock_profit_forecast_ths
+      param_map: {}
+      symbol_fmt: null
+      drop_params: []
+
+  limit_up_broken:
+    desc: "炸板池（曾涨停又开板）"
+    axdata: null
+    akshare:
+      func: stock_zt_pool_dtgc_em
+      param_map: {}
+      symbol_fmt: null
+      drop_params: [symbol, code]
+
+  limit_up_previous:
+    desc: "昨日涨停池（今表现）"
+    axdata: null
+    akshare:
+      func: stock_zt_pool_previous_em
+      param_map: {}
+      symbol_fmt: null
+      drop_params: [symbol, code]
+
+  limit_up_strong:
+    desc: "强势股池（连板等）"
+    axdata: null
+    akshare:
+      func: stock_zt_pool_strong_em
+      param_map: {}
+      symbol_fmt: null
+      drop_params: [symbol, code]
+
+  option_t_quote:
+    desc: "ETF期权T型报价"
+    axdata: null
+    akshare:
+      func: option_current_em
+      param_map: {}
+      symbol_fmt: null
+      drop_params: []
+
+  hot_rank:
+    desc: "东财人气排行榜"
+    axdata: null
+    akshare:
+      func: stock_hot_rank_em
+      param_map: {}
+      symbol_fmt: null
+      drop_params: [symbol, code]
+
+  concept_belong:
+    desc: "个股概念板块归属"
+    axdata: null
+    akshare:
+      func: stock_board_concept_name_em
+      param_map: {}
+      symbol_fmt: null
+      drop_params: [symbol, code]
+
+# 以下工具由 sources/ 目录下的自定义模块提供，不在此配置
+custom_sources:
+  - cls_telegraph
+  - reuters_news
+  - bloomberg_news
+  - bloomberg_billionaires
+  - global_news_search
+  - tencent_realtime_quote
+  - stock_zh_a_daily
+  - stock_zh_index_daily
+  - stock_zh_index_spot
+  - stock_zh_a_spot
+  - stock_news
+  - news_cctv
+  - news_economic_calendar
+  - stock_notice_cninfo
+  - stock_profile_cninfo
+  - stock_financial_abstract_cninfo
+  - stock_dividend_cninfo
+  - futures_realtime
+  - futures_daily
+  - futures_global_spot
+  - index_us_daily
+  - index_hk_daily
+  - index_global_list
+  - fund_etf_spot
+  - fund_etf_daily
+  - northbound_flow
+  - stock_fund_flow
+  - margin_trading
+  - block_trade
+  - holder_count
+  - lockup_release
+  - research_report
+  - eps_forecast
+  - limit_up_broken
+  - limit_up_previous
+  - limit_up_strong
+  - option_t_quote
+  - hot_rank
+  - concept_belong
+  - translate_text
+  - global_news_em
+  - global_news_sina
+  - global_news_ths
+  - wallstreet_news
+  - futures_news_shmet
+  - stock_us_news

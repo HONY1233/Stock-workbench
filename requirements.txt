@@ -5,3 +5,4 @@ curl_cffi>=0.7.0
 axdata>=0.1.0
 APScheduler>=3.10.0
 redis>=5.0.0
+PyYAML>=6.0
