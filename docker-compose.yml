@@ -1,0 +1,42 @@
+version: "3.8"
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: akshare-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+
+  akshare-mcp:
+    build: .
+    container_name: akshare-mcp
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - MCP_TRANSPORT=sse
+      - MCP_HOST=0.0.0.0
+      - MCP_PORT=8000
+      - REDIS_URL=redis://redis:6379/0
+      - AKSHARE_DB_PATH=/app/data/akshare_memory.db
+    depends_on:
+      - redis
+    volumes:
+      # 持久化缓存（可选）
+      - mcp-cache:/root/.cache
+      - mcp-data:/app/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/sse', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  mcp-cache:
+  mcp-data:
+  redis-data:
