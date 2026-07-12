@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "akshare": {
+      "command": "python3",
+      "args": ["/workspace/akshare-mcp/server.py"],
+      "env": {}
+    }
+  }
+}
