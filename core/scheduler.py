@@ -27,10 +27,12 @@ class TaskScheduler:
     """任务调度器封装。"""
 
     def __init__(self, storage: SQLiteStorage, dedup: RedisDedup,
-                 tool_registry: Optional[dict[str, Callable]] = None):
+                 tool_registry: Optional[dict[str, Callable]] = None,
+                 pusher=None):
         self.storage = storage
         self.dedup = dedup
         self.tool_registry = tool_registry or {}
+        self.pusher = pusher  # WSPusher 实例，可选
         self.scheduler = BackgroundScheduler(timezone="Asia/Shanghai")
         self._task_handlers: dict[str, Callable] = {}
         self._register_default_handlers()
@@ -49,19 +51,28 @@ class TaskScheduler:
     # ─────────────── 任务执行包装 ───────────────
 
     def _run_task(self, task_name: str, task_type: str, params: dict) -> None:
-        """任务执行包装：记录日志 + 异常捕获。"""
+        """任务执行包装：记录日志 + 异常捕获 + WS 推送。"""
         log_id = self.storage.log_task_start(task_name)
         start_ts = time.time()
         try:
             handler = self._task_handlers.get(task_type)
             if not handler:
                 raise ValueError(f"未知任务类型: {task_type}")
-            new_count = handler(task_name, params)
+            result = handler(task_name, params)
+            # handler 可返回 int(new_count) 或 (new_count, pushed_data)
+            if isinstance(result, tuple) and len(result) == 2:
+                new_count, pushed_data = result
+            else:
+                new_count = result if isinstance(result, int) else 0
+                pushed_data = []
             duration = int((time.time() - start_ts) * 1000)
             self.storage.log_task_finish(
                 log_id, "success", message="执行成功",
                 new_count=new_count, duration_ms=duration
             )
+            # WS 推送
+            if self.pusher and pushed_data:
+                self.pusher.broadcast(task_name, task_type, pushed_data, new_count)
         except Exception as e:
             duration = int((time.time() - start_ts) * 1000)
             err = f"{type(e).__name__}: {str(e)[:500]}\n{traceback.format_exc()[:1000]}"
@@ -72,7 +83,7 @@ class TaskScheduler:
 
     # ─────────────── 内置任务处理器 ───────────────
 
-    def _handle_news_fetch(self, task_name: str, params: dict) -> int:
+    def _handle_news_fetch(self, task_name: str, params: dict):
         """新闻抓取任务：调用指定 MCP 工具，将结果存入 SQLite。
 
         params:
@@ -80,6 +91,9 @@ class TaskScheduler:
           tool_params: 传递给工具的参数字典
           source_override: 覆盖 source 名称（可选）
           id_field: 作为唯一标识的字段名，默认 id
+
+        Returns:
+            (new_count, pushed_items) 元组
         """
         tool_name = params.get("tool", "")
         tool_params = params.get("tool_params", {})
@@ -97,6 +111,7 @@ class TaskScheduler:
 
         data = result.get("data", [])
         new_count = 0
+        pushed_items = []
         for item in data:
             item_id = str(item.get(id_field) or item.get("id") or item.get("代码") or
                           item.get("标题", "")[:50])
@@ -122,11 +137,12 @@ class TaskScheduler:
             )
             if is_new:
                 new_count += 1
+                pushed_items.append(item)
                 self.dedup.mark_seen(f"news:{source}", [item_id])
 
-        return new_count
+        return new_count, pushed_items
 
-    def _handle_market_snapshot(self, task_name: str, params: dict) -> int:
+    def _handle_market_snapshot(self, task_name: str, params: dict):
         """行情快照任务：保存当前行情快照。
 
         params:
@@ -134,6 +150,9 @@ class TaskScheduler:
           tool_params: 工具参数
           snapshot_type: 快照类型分类
           symbol: 标的（可选，用于分类）
+
+        Returns:
+            (new_count, pushed_data) 元组
         """
         tool_name = params.get("tool", "")
         tool_params = params.get("tool_params", {})
@@ -152,6 +171,7 @@ class TaskScheduler:
         data = result.get("data", [])
         snapshot_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         new_count = 0
+        pushed_data = []
 
         if isinstance(data, list) and len(data) == 1:
             item = data[0]
@@ -163,6 +183,7 @@ class TaskScheduler:
             )
             if is_new:
                 new_count += 1
+                pushed_data = [item]
         else:
             is_new = self.storage.save_market_snapshot(
                 snapshot_type=snapshot_type,
@@ -172,8 +193,9 @@ class TaskScheduler:
             )
             if is_new:
                 new_count += 1
+                pushed_data = data if isinstance(data, list) else [data]
 
-        return new_count
+        return new_count, pushed_data
 
     def _handle_custom_call(self, task_name: str, params: dict) -> int:
         """自定义工具调用任务：仅执行工具调用，不存数据。

@@ -213,6 +213,7 @@ def reload_sources() -> str:
 _storage = None
 _dedup = None
 _scheduler = None
+_pusher = None
 
 
 def _get_storage():
@@ -237,18 +238,50 @@ def _get_dedup():
     return _dedup
 
 
+def _get_pusher():
+    """获取或初始化 WebSocket 推送服务。"""
+    global _pusher
+    if _pusher is None:
+        import os
+        from core.ws_pusher import WSPusher
+        ws_host = os.environ.get("WS_HOST", "0.0.0.0")
+        ws_port = int(os.environ.get("WS_PORT", "8001"))
+        _pusher = WSPusher(host=ws_host, port=ws_port)
+        _pusher.start_in_thread()
+    return _pusher
+
+
 def _get_tool_registry():
-    """构造工具名 -> 函数 的注册表（供调度器调用）。"""
-    import inspect
+    """构造工具名 -> 函数 的注册表（供调度器调用）。
+
+    从 FastMCP 的 _local_provider._components 中提取所有工具的原始函数引用，
+    这样包含了 sources/ 模块注册的所有自定义工具。
+    """
     registry = {}
+    # 从 FastMCP 内部获取所有工具函数
+    try:
+        comps = mcp._local_provider._components
+        for key, tool in comps.items():
+            if key.startswith("tool:") and hasattr(tool, "fn"):
+                # 键格式: tool:{name}@
+                name = key.split(":", 1)[1].rstrip("@")
+                fn = tool.fn
+                if callable(fn):
+                    registry[name] = fn
+    except Exception:
+        pass
+
+    # 兜底：扫描 server.py 全局函数
+    import inspect
     for name, obj in list(globals().items()):
         if callable(obj) and not name.startswith("_") and name != "mcp":
-            try:
-                sig = inspect.signature(obj)
-                if sig.parameters:
-                    registry[name] = obj
-            except (TypeError, ValueError):
-                continue
+            if name not in registry:
+                try:
+                    sig = inspect.signature(obj)
+                    if sig.parameters:
+                        registry[name] = obj
+                except (TypeError, ValueError):
+                    continue
     return registry
 
 
@@ -260,7 +293,11 @@ def _get_scheduler():
         storage = _get_storage()
         dedup = _get_dedup()
         registry = _get_tool_registry()
-        _scheduler = TaskScheduler(storage=storage, dedup=dedup, tool_registry=registry)
+        pusher = _get_pusher()
+        _scheduler = TaskScheduler(
+            storage=storage, dedup=dedup,
+            tool_registry=registry, pusher=pusher,
+        )
     return _scheduler
 
 
@@ -517,6 +554,37 @@ def scheduler_logs(task_name: Optional[str] = None, limit: int = 50) -> str:
         storage = _get_storage()
         logs = storage.query_task_logs(task_name=task_name, limit=limit)
         return json.dumps({"ok": True, "count": len(logs), "logs": logs}, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"ok": False, "error": f"{type(e).__name__}: {str(e)[:200]}"}, ensure_ascii=False)
+
+
+# ─────────────── WebSocket 推送管理工具 ───────────────
+
+@mcp.tool(description="查询 WebSocket 推送服务状态：连接数、订阅分布、服务地址")
+def ws_status() -> str:
+    """获取 WebSocket 推送服务状态。
+
+    Returns:
+        JSON 格式的 WS 服务状态，包含连接数、订阅分布、监听地址
+    """
+    try:
+        pusher = _get_pusher()
+        stats = pusher.stats()
+        return json.dumps({
+            "ok": True,
+            "ws_url": f"ws://{stats['host']}:{stats['port']}",
+            "running": stats["running"],
+            "total_connections": stats["total_connections"],
+            "by_topic": stats["by_topic"],
+            "subscribe_protocol": {
+                "url": f"ws://{stats['host']}:{stats['port']}",
+                "step1": "连接后发送 JSON 订阅消息",
+                "message": '{"topic": "news|snapshot|custom|all", "task_name": "", "symbol": ""}',
+                "step2": "服务端返回 {type: subscribed} 确认",
+                "step3": "定时任务执行后自动推送结果",
+                "push_format": '{"task_name", "task_type", "timestamp", "new_count", "data"}',
+            },
+        }, ensure_ascii=False)
     except Exception as e:
         return json.dumps({"ok": False, "error": f"{type(e).__name__}: {str(e)[:200]}"}, ensure_ascii=False)
 
