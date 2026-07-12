@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "akshare": {
+      "command": "C:\\PROGRA~1\\Python312\\python.exe",
+      "args": ["e:\\Trae data\\Akshare-MCP-main\\server.py"],
+      "env": {
+        "START_MCP_TIMEOUT_MS": "60000",
+        "RUN_MCP_TIMEOUT_MS": "120000"
+      }
+    }
+  }
+}
