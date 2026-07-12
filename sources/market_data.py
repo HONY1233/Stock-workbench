@@ -90,30 +90,38 @@ def register(mcp) -> list[str]:
         except Exception as e:
             return json.dumps({"ok": False, "error": f"{type(e).__name__}: {str(e)[:200]}"}, ensure_ascii=False)
 
-    @mcp.tool(description="北向资金(沪深港通)个股持股明细")
+    @mcp.tool(description="北向资金(沪深港通)数据：汇总、历史、个股持股明细")
     def northbound_flow(symbol: str = "北向资金") -> str:
-        """获取北向资金(沪深港通)持股明细数据。
+        """获取北向资金(沪深港通)数据，支持三种查询模式。
 
         Args:
-            symbol: 标的名称，默认"北向资金"；也可传个股代码如"600519"
+            symbol: 查询标的，决定返回的数据类型：
+                - "北向资金"(默认): 当日沪深港通汇总（4行：沪股通/深股通/港股通沪/港股通深）
+                - "沪股通"/"深股通"/"港股通(沪)"/"港股通(深)": 对应板块的历史每日资金流向
+                - 个股代码如"600519": 该股的北向持股历史明细
 
         Returns:
             JSON 格式的北向资金数据
         """
         try:
-            # stock_hsgt_individual_em 的 symbol 参数是股票代码，不是"北向资金"
-            # 尝试多种调用方式
-            if symbol in ("北向资金", "沪股通", "深股通", "港股通"):
-                # 获取汇总数据
-                df = ak.stock_market_fund_flow()
-                source = "eastmoney汇总"
+            if symbol in ("北向资金", "汇总", "all"):
+                # 当日汇总：沪股通/深股通/港股通(沪)/港股通(深)
+                df = ak.stock_hsgt_fund_flow_summary_em()
+                source = "eastmoney_summary"
+            elif symbol in ("沪股通", "深股通", "港股通(沪)", "港股通(深)"):
+                # 历史每日资金流向
+                df = ak.stock_hsgt_hist_em(symbol=symbol)
+                source = "eastmoney_hist"
             else:
-                df = ak.stock_hsgt_individual_em(symbol=symbol)
-                source = "eastmoney"
+                # 个股北向持股明细
+                code = symbol.replace("sh", "").replace("sz", "").replace(".SH", "").replace(".SZ", "")
+                df = ak.stock_hsgt_individual_em(symbol=code)
+                source = "eastmoney_individual"
             data = _df_to_records(df)
             return json.dumps({
                 "ok": True,
                 "source": source,
+                "symbol": symbol,
                 "count": len(data),
                 "data": data,
             }, ensure_ascii=False)

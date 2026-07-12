@@ -218,11 +218,13 @@ sources:
     akshare: null
 
   lhb_institution:
-    desc: "龙虎榜机构席位明细"
+    desc: "龙虎榜机构席位明细（返回最新交易日，不支持日期过滤）"
     axdata:
       interface: stock_lhb_jgmx_sina
       param_map: {}
       symbol_fmt: null
+      drop_params:
+        - date
     akshare: null
 
   # ===== 期权 =====
