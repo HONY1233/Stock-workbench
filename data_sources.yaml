@@ -1,11 +1,78 @@
-# 数据源配置文件
-# 修改此文件即可增删数据源，无需改代码
-# 每个源支持: axdata(优先) + akshare(fallback) 双源路由
+providers:
+  sina:
+    name: "新浪财经"
+    description: "新浪财经数据接口"
+    supports: [realtime, daily, index, futures, lhb]
+
+  eastmoney:
+    name: "东方财富"
+    description: "东方财富数据接口"
+    supports: [realtime, sector, fund_flow]
+
+  cls:
+    name: "财联社"
+    description: "财联社财经资讯"
+    supports: [news, emotion, limit_up]
+
+  tencent:
+    name: "腾讯财经"
+    description: "腾讯财经数据接口"
+    supports: [realtime, daily]
+
+  ths:
+    name: "同花顺"
+    description: "同花顺数据接口"
+    supports: [sector, research]
+
+  cninfo:
+    name: "巨潮资讯"
+    description: "巨潮资讯网"
+    supports: [announcement, profile, financial]
+
+  kph:
+    name: "开盘红"
+    description: "开盘红市场情绪"
+    supports: [emotion]
+
+  sse:
+    name: "上交所"
+    description: "上海证券交易所"
+    supports: [margin, block_trade]
+
+  wallstreet:
+    name: "华尔街见闻"
+    description: "华尔街见闻财经日历"
+    supports: [calendar]
+
+  shmet:
+    name: "上期所"
+    description: "上海期货交易所"
+    supports: [news]
+
+  cctv:
+    name: "央视新闻"
+    description: "新闻联播文字稿"
+    supports: [news]
+
+  baidu:
+    name: "百度"
+    description: "百度财经日历"
+    supports: [calendar]
+
+  bloomberg:
+    name: "彭博社"
+    description: "彭博社财经新闻"
+    supports: [news, billionaires]
+
+  reuters:
+    name: "路透社"
+    description: "路透社财经新闻"
+    supports: [news]
 
 sources:
-  # ===== 个股 =====
   stock_daily:
     desc: "A股日K线"
+    providers: [tencent, sina]
     axdata:
       interface: stock_zh_a_hist_tx
       param_map:
@@ -20,6 +87,7 @@ sources:
 
   stock_realtime:
     desc: "A股实时行情"
+    providers: [eastmoney, sina]
     axdata: null
     akshare:
       func: stock_zh_a_spot_em
@@ -29,9 +97,9 @@ sources:
       drop_params: [symbol, code]
       sina_fallback: true
 
-  # ===== 指数 =====
   index_daily:
     desc: "A股指数日K线"
+    providers: [sina]
     axdata: null
     akshare:
       func: stock_zh_index_daily
@@ -40,6 +108,7 @@ sources:
 
   index_realtime:
     desc: "A股指数实时行情"
+    providers: [sina, eastmoney]
     axdata:
       interface: stock_zh_index_spot_sina
       param_map: {}
@@ -51,9 +120,9 @@ sources:
       drop_params: [symbol, code]
       sina_fallback: true
 
-  # ===== ETF =====
   etf_daily:
     desc: "ETF日K线"
+    providers: [sina]
     axdata:
       interface: fund_etf_hist_sina
       param_map: {}
@@ -65,6 +134,7 @@ sources:
 
   etf_realtime:
     desc: "ETF实时行情"
+    providers: [eastmoney]
     axdata: null
     akshare:
       func: fund_etf_spot_em
@@ -74,9 +144,9 @@ sources:
       drop_params: [symbol, code]
       sina_fallback: true
 
-  # ===== 期货 =====
   futures_daily:
     desc: "期货日线（主力合约）"
+    providers: [sina]
     axdata:
       interface: futures_main_sina
       param_map: {}
@@ -88,6 +158,7 @@ sources:
 
   futures_realtime:
     desc: "期货实时行情"
+    providers: [sina]
     axdata:
       interface: futures_display_main_sina
       param_map: {}
@@ -99,9 +170,9 @@ sources:
       filter_by: symbol
       drop_params: [symbol]
 
-  # ===== 涨跌停 / 板块 =====
   limit_up_pool:
     desc: "涨停池"
+    providers: [eastmoney]
     axdata:
       interface: eastmoney_limit_up_pool
       param_map: {}
@@ -110,6 +181,7 @@ sources:
 
   limit_down_pool:
     desc: "跌停池"
+    providers: [eastmoney]
     axdata:
       interface: eastmoney_limit_down_pool
       param_map: {}
@@ -118,6 +190,7 @@ sources:
 
   sector_realtime:
     desc: "板块实时行情"
+    providers: [eastmoney]
     axdata:
       interface: eastmoney_sector_realtime
       param_map: {}
@@ -126,15 +199,16 @@ sources:
 
   market_index_realtime:
     desc: "大盘指数实时行情"
+    providers: [eastmoney]
     axdata:
       interface: eastmoney_market_index_realtime
       param_map: {}
       symbol_fmt: null
     akshare: null
 
-  # ===== 财联社 =====
   cls_telegraph:
     desc: "财联社电报快讯"
+    providers: [cls]
     axdata:
       interface: cls_news_telegraph
       param_map: {}
@@ -143,6 +217,7 @@ sources:
 
   cls_market_emotion:
     desc: "财联社市场情绪"
+    providers: [cls]
     axdata:
       interface: cls_market_emotion
       param_map: {}
@@ -151,6 +226,7 @@ sources:
 
   cls_limit_up_pool:
     desc: "财联社涨停池"
+    providers: [cls]
     axdata:
       interface: cls_limit_up_pool
       param_map: {}
@@ -159,6 +235,7 @@ sources:
 
   cls_sector_heat:
     desc: "财联社板块热度"
+    providers: [cls]
     axdata:
       interface: cls_sector_heat
       param_map: {}
@@ -167,6 +244,7 @@ sources:
 
   cls_market_wind:
     desc: "财联社今日风口"
+    providers: [cls]
     axdata:
       interface: cls_market_wind
       param_map: {}
@@ -175,24 +253,25 @@ sources:
 
   cls_market_mainline:
     desc: "财联社今日主线"
+    providers: [cls]
     axdata:
       interface: cls_market_mainline
       param_map: {}
       symbol_fmt: null
     akshare: null
 
-  # ===== 开盘红 =====
   kph_market_emotion:
     desc: "开盘红市场情绪"
+    providers: [kph]
     axdata:
       interface: kph_market_emotion
       param_map: {}
       symbol_fmt: null
     akshare: null
 
-  # ===== 龙虎榜 =====
   lhb_daily:
     desc: "龙虎榜每日详情"
+    providers: [sina]
     axdata:
       interface: stock_lhb_detail_daily_sina
       param_map: {}
@@ -201,6 +280,7 @@ sources:
 
   lhb_institution:
     desc: "龙虎榜机构席位"
+    providers: [sina]
     axdata:
       interface: stock_lhb_jgmx_sina
       param_map: {}
@@ -208,9 +288,9 @@ sources:
       drop_params: [date]
     akshare: null
 
-  # ===== 期权 =====
   option_commodity_list:
     desc: "商品期权品种"
+    providers: [sina]
     axdata:
       interface: option_commodity_contract_sina
       param_map: {}
@@ -219,15 +299,16 @@ sources:
 
   option_cffex_hs300_list:
     desc: "沪深300期权合约"
+    providers: [sina]
     axdata:
       interface: option_cffex_hs300_list_sina
       param_map: {}
       symbol_fmt: null
     akshare: null
 
-  # ===== 巨潮 =====
   cninfo_announcements:
     desc: "巨潮公告列表"
+    providers: [cninfo]
     axdata:
       interface: cninfo_announcements
       param_map:
@@ -237,6 +318,7 @@ sources:
 
   stock_profile_cninfo:
     desc: "公司概况（巨潮）"
+    providers: [cninfo]
     axdata:
       interface: stock_profile_cninfo
       param_map:
@@ -246,6 +328,7 @@ sources:
 
   stock_dividend_cninfo:
     desc: "分红配送（巨潮）"
+    providers: [cninfo]
     axdata:
       interface: stock_dividend_cninfo
       param_map:
@@ -253,9 +336,9 @@ sources:
       symbol_fmt: null
     akshare: null
 
-  # ===== 新闻 =====
   news_cctv:
     desc: "新闻联播文字稿"
+    providers: [cctv]
     axdata: null
     akshare:
       func: news_cctv
@@ -265,6 +348,7 @@ sources:
 
   economic_calendar:
     desc: "财经日历"
+    providers: [baidu]
     axdata: null
     akshare:
       func: news_economic_baidu
@@ -274,15 +358,16 @@ sources:
 
   stock_news:
     desc: "个股新闻"
+    providers: [eastmoney]
     axdata: null
     akshare:
       func: stock_news_em
       param_map: {}
       symbol_fmt: null
 
-  # ===== 外围新闻 =====
   global_news_em:
     desc: "全球财经新闻（东方财富）"
+    providers: [eastmoney]
     axdata: null
     akshare:
       func: stock_info_global_em
@@ -293,6 +378,7 @@ sources:
 
   global_news_sina:
     desc: "全球财经快讯（新浪）"
+    providers: [sina]
     axdata: null
     akshare:
       func: stock_info_global_sina
@@ -303,6 +389,7 @@ sources:
 
   global_news_ths:
     desc: "全球财经新闻（同花顺）"
+    providers: [ths]
     axdata: null
     akshare:
       func: stock_info_global_ths
@@ -313,6 +400,7 @@ sources:
 
   wallstreet_news:
     desc: "华尔街见闻财经日历"
+    providers: [wallstreet]
     axdata: null
     akshare:
       func: macro_info_ws
@@ -323,6 +411,7 @@ sources:
 
   futures_news_shmet:
     desc: "上期所新闻"
+    providers: [shmet]
     axdata: null
     akshare:
       func: futures_news_shmet
@@ -331,9 +420,9 @@ sources:
       drop_params: [symbol, code]
       translate_fields: [内容]
 
-  # ===== 外围指数 =====
   index_us_daily:
     desc: "美股指数日线"
+    providers: [sina]
     axdata:
       interface: index_us_stock_sina
       param_map: {}
@@ -345,6 +434,7 @@ sources:
 
   index_hk_daily:
     desc: "港股指数日线"
+    providers: [sina]
     axdata:
       interface: stock_hk_index_daily_sina
       param_map: {}
@@ -356,6 +446,7 @@ sources:
 
   index_global_list:
     desc: "全球指数代码表"
+    providers: [sina]
     axdata: null
     akshare:
       func: index_global_name_table
@@ -365,6 +456,7 @@ sources:
 
   futures_global_spot:
     desc: "全球期货行情"
+    providers: [eastmoney]
     axdata: null
     akshare:
       func: futures_global_spot_em
@@ -374,6 +466,7 @@ sources:
 
   etf_spot:
     desc: "ETF实时行情列表"
+    providers: [eastmoney]
     axdata: null
     akshare:
       func: fund_etf_spot_em
@@ -382,19 +475,9 @@ sources:
       drop_params: [symbol, code]
       filter_by: 代码
 
-  # ===== 国际新闻源 =====
-  reuters_news:
-    desc: "路透社财经新闻"
-    axdata: null
-    akshare: null
-
-  bloomberg_news:
-    desc: "彭博社财经新闻"
-    axdata: null
-    akshare: null
-
   bloomberg_billionaires:
     desc: "彭博亿万富豪榜"
+    providers: [bloomberg]
     axdata: null
     akshare:
       func: index_bloomberg_billionaires
@@ -402,19 +485,9 @@ sources:
       symbol_fmt: null
       drop_params: [symbol, code]
 
-  global_news_search:
-    desc: "全球新闻搜索"
-    axdata: null
-    akshare: null
-
-  # ===== 补充信息源 =====
-  tencent_realtime_quote:
-    desc: "腾讯实时行情"
-    axdata: null
-    akshare: null
-
   northbound_flow:
     desc: "北向资金"
+    providers: [eastmoney]
     axdata: null
     akshare:
       func: stock_hsgt_individual_em
@@ -424,6 +497,7 @@ sources:
 
   stock_fund_flow:
     desc: "个股资金流向"
+    providers: [eastmoney]
     axdata: null
     akshare:
       func: stock_individual_fund_flow
@@ -433,6 +507,7 @@ sources:
 
   margin_trading:
     desc: "融资融券"
+    providers: [sse]
     axdata: null
     akshare:
       func: stock_margin_sse
@@ -442,6 +517,7 @@ sources:
 
   block_trade:
     desc: "大宗交易"
+    providers: [sse]
     axdata: null
     akshare:
       func: stock_dzjy_mrmx
@@ -451,6 +527,7 @@ sources:
 
   holder_count:
     desc: "股东户数变化"
+    providers: [eastmoney]
     axdata: null
     akshare:
       func: stock_zh_a_gdhs
@@ -460,6 +537,7 @@ sources:
 
   lockup_release:
     desc: "限售解禁日历"
+    providers: [eastmoney]
     axdata: null
     akshare:
       func: stock_restricted_release_queue_em
@@ -469,6 +547,7 @@ sources:
 
   research_report:
     desc: "研报盈利预测"
+    providers: [ths]
     axdata: null
     akshare:
       func: stock_profit_forecast_ths
@@ -478,6 +557,7 @@ sources:
 
   eps_forecast:
     desc: "一致预期EPS"
+    providers: [ths]
     axdata: null
     akshare:
       func: stock_profit_forecast_ths
@@ -487,6 +567,7 @@ sources:
 
   limit_up_broken:
     desc: "炸板池"
+    providers: [eastmoney]
     axdata: null
     akshare:
       func: stock_zt_pool_dtgc_em
@@ -496,6 +577,7 @@ sources:
 
   limit_up_previous:
     desc: "昨日涨停池"
+    providers: [eastmoney]
     axdata: null
     akshare:
       func: stock_zt_pool_previous_em
@@ -505,6 +587,7 @@ sources:
 
   limit_up_strong:
     desc: "强势股池"
+    providers: [eastmoney]
     axdata: null
     akshare:
       func: stock_zt_pool_strong_em
@@ -514,6 +597,7 @@ sources:
 
   option_t_quote:
     desc: "ETF期权行情"
+    providers: [eastmoney]
     axdata: null
     akshare:
       func: option_current_em
@@ -523,6 +607,7 @@ sources:
 
   hot_rank:
     desc: "东财人气榜"
+    providers: [eastmoney]
     axdata: null
     akshare:
       func: stock_hot_rank_em
@@ -532,58 +617,10 @@ sources:
 
   concept_belong:
     desc: "概念板块归属"
+    providers: [eastmoney]
     axdata: null
     akshare:
       func: stock_board_concept_name_em
       param_map: {}
       symbol_fmt: null
       drop_params: [symbol, code]
-
-# 自定义工具（由 sources/ 模块提供）
-custom_sources:
-  - cls_telegraph
-  - reuters_news
-  - bloomberg_news
-  - bloomberg_billionaires
-  - global_news_search
-  - tencent_realtime_quote
-  - stock_zh_a_daily
-  - stock_zh_index_daily
-  - stock_zh_index_spot
-  - stock_zh_a_spot
-  - stock_news
-  - news_cctv
-  - news_economic_calendar
-  - stock_notice_cninfo
-  - stock_profile_cninfo
-  - stock_financial_abstract_cninfo
-  - stock_dividend_cninfo
-  - futures_realtime
-  - futures_daily
-  - futures_global_spot
-  - index_us_daily
-  - index_hk_daily
-  - index_global_list
-  - fund_etf_spot
-  - fund_etf_daily
-  - northbound_flow
-  - stock_fund_flow
-  - margin_trading
-  - block_trade
-  - holder_count
-  - lockup_release
-  - research_report
-  - eps_forecast
-  - limit_up_broken
-  - limit_up_previous
-  - limit_up_strong
-  - option_t_quote
-  - hot_rank
-  - concept_belong
-  - translate_text
-  - global_news_em
-  - global_news_sina
-  - global_news_ths
-  - wallstreet_news
-  - futures_news_shmet
-  - stock_us_news

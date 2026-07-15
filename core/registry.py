@@ -326,6 +326,7 @@ class SourceRegistry:
         self.config_path = str(config_path)
         self.sources: dict[str, dict] = {}
         self.custom_sources: set[str] = set()
+        self.providers_config: dict[str, dict] = {}
         self._load_config()
 
     def _load_config(self) -> None:
@@ -334,6 +335,7 @@ class SourceRegistry:
             data = yaml.safe_load(f)
         self.sources = data.get("sources", {})
         self.custom_sources = set(data.get("custom_sources", []))
+        self.providers_config = data.get("providers", {})
 
     def reload(self) -> None:
         """重新加载配置（热更新）。"""

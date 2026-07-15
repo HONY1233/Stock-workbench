@@ -41,6 +41,8 @@ from pydantic import BaseModel, Field
 from core.helpers import _df_to_records
 from core.tiers import Tier, TOOL_TIERS, tier_info
 from core.registry import SourceRegistry, load_custom_sources, call_unified
+from core.router import Router
+from core.providers import PROVIDERS
 from core.translate import _translate_records
 
 mcp = FastMCP("akshare")
@@ -53,6 +55,9 @@ _registry.register_auto_tools(mcp)
 
 # 2. 加载 sources/ 目录下的自定义复杂源
 _custom_tools = load_custom_sources(mcp)
+
+# 3. 初始化路由引擎
+_router = Router(_registry.sources, PROVIDERS)
 
 
 # ── 统一数据查询接口 ──────────────────────────────────────────
@@ -99,19 +104,16 @@ def data_query(
             translate=translate, source_preference=source_preference,
         )
         call_params = json.loads(params.params_json) if params.params_json else {}
-        ok, data, source = call_unified(
-            params.interface, _registry.sources, source_preference=params.source_preference, **call_params
-        )
+        result = _router.route(params.interface, source_preference=params.source_preference, **call_params)
 
-        if not ok:
-            err = data[0].get("error", "未知错误") if data else "未知错误"
-            return json.dumps({"ok": False, "data": [], "count": 0, "source": source, "error": err}, ensure_ascii=False)
+        if not result.success:
+            return json.dumps({"ok": False, "data": [], "count": 0, "provider": result.provider, "source": result.source, "error": result.error}, ensure_ascii=False)
 
-        if params.limit and len(data) > params.limit:
-            data = data[:params.limit]
+        if params.limit and len(result.data) > params.limit:
+            result.data = result.data[:params.limit]
 
         translated = False
-        if params.translate and data:
+        if params.translate and result.data:
             cfg = _registry.sources.get(params.interface)
             if cfg:
                 tfields = set()
@@ -120,12 +122,13 @@ def data_query(
                     if src_cfg and src_cfg.get("translate_fields"):
                         tfields.update(src_cfg["translate_fields"])
                 if tfields:
-                    _translate_records(data, fields=tfields, translate=True)
+                    _translate_records(result.data, fields=tfields, translate=True)
                     translated = True
 
         return json.dumps({
-            "ok": True, "interface": params.interface, "source": source,
-            "count": len(data), "translated": translated, "data": data,
+            "ok": True, "interface": params.interface,
+            "provider": result.provider, "source": result.source,
+            "count": len(result.data), "translated": translated, "data": result.data,
         }, ensure_ascii=False)
     except Exception as e:
         return json.dumps({"ok": False, "data": [], "count": 0, "error": f"{type(e).__name__}: {str(e)[:200]}"}, ensure_ascii=False)
@@ -142,9 +145,17 @@ def data_interfaces() -> str:
     for alias, cfg in _registry.sources.items():
         axdata_iface = cfg.get("axdata", {}).get("interface") if cfg.get("axdata") else None
         akshare_func = cfg.get("akshare", {}).get("func") if cfg.get("akshare") else None
+        providers = cfg.get("providers", [])
+        provider_names = []
+        for pid in providers:
+            p = PROVIDERS.get(pid)
+            if p:
+                provider_names.append(p.name)
         interfaces.append({
             "alias": alias,
             "description": cfg.get("desc", ""),
+            "providers": providers,
+            "provider_names": provider_names,
             "axdata_interface": axdata_iface,
             "akshare_function": akshare_func,
             "priority": "axdata" if axdata_iface else ("akshare" if akshare_func else "none"),
@@ -158,22 +169,31 @@ def data_interfaces() -> str:
 
 @mcp.tool(
     name="list_interfaces_by_source",
-    description="按数据来源提供商分类列出 YAML 配置的接口",
+    description="按数据来源提供商分类列出接口",
     annotations=_READ_ONLY,
 )
 def list_interfaces_by_source(provider: str = "") -> str:
     """按数据来源提供商分类列出接口。provider 为空则返回所有提供商汇总。"""
     try:
         if not provider:
-            all_providers = _registry.get_providers()
             summary = {}
-            for p in sorted(all_providers):
-                yaml_tools = list(_registry.list_by_provider(p).keys())
-                summary[p] = {"yaml_interfaces": yaml_tools, "count": len(yaml_tools)}
+            for pid, p in PROVIDERS.items():
+                yaml_tools = _router.list_by_provider(pid)
+                summary[pid] = {
+                    "name": p.name,
+                    "description": p.description,
+                    "supports": p.supports,
+                    "yaml_interfaces": list(yaml_tools.keys()),
+                    "count": len(yaml_tools),
+                }
             return json.dumps({"ok": True, "count": len(summary), "by_provider": summary}, ensure_ascii=False)
 
         provider_lower = provider.lower()
-        yaml_interfaces = _registry.list_by_provider(provider_lower)
+        if provider_lower not in PROVIDERS:
+            return json.dumps({"ok": False, "error": f"provider '{provider}' 不存在，可用: {list(PROVIDERS.keys())}"}, ensure_ascii=False)
+
+        yaml_interfaces = _router.list_by_provider(provider_lower)
+        p_info = PROVIDERS[provider_lower]
         yaml_detail = []
         for alias, cfg in yaml_interfaces.items():
             yaml_detail.append({
@@ -182,7 +202,10 @@ def list_interfaces_by_source(provider: str = "") -> str:
                 "akshare_function": cfg.get("akshare", {}).get("func") if cfg.get("akshare") else None,
             })
         return json.dumps({
-            "ok": True, "provider": provider,
+            "ok": True,
+            "provider": provider,
+            "provider_name": p_info.name,
+            "provider_description": p_info.description,
             "yaml_interfaces": yaml_detail, "count": len(yaml_detail),
         }, ensure_ascii=False)
     except Exception as e:
