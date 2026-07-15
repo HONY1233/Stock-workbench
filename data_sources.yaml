@@ -1,4 +1,9 @@
 providers:
+  tdx:
+    name: "通达信"
+    description: "通达信行情服务器，支持A股/港股/美股/期货实时行情、K线、技术指标"
+    supports: [realtime, daily, kline, tick, f10, indicator, futures, hk_stock, us_stock]
+
   sina:
     name: "新浪财经"
     description: "新浪财经数据接口"
@@ -624,3 +629,67 @@ sources:
       param_map: {}
       symbol_fmt: null
       drop_params: [symbol, code]
+
+  # ===== 通达信扩展接口（tdx provider）=====
+  tdx_stock_quotes:
+    desc: "通达信实时行情"
+    providers: [tdx]
+    tdx:
+      interface: stock_quotes
+      param_map: {}
+    axdata: null
+    akshare: null
+
+  tdx_stock_kline:
+    desc: "通达信K线数据"
+    providers: [tdx]
+    tdx:
+      interface: stock_kline
+      param_map: {}
+    axdata: null
+    akshare: null
+
+  tdx_index_kline:
+    desc: "通达信指数K线"
+    providers: [tdx]
+    tdx:
+      interface: index_kline
+      param_map: {}
+    axdata: null
+    akshare: null
+
+  tdx_tick_data:
+    desc: "通达信分时数据"
+    providers: [tdx]
+    tdx:
+      interface: tick_data
+      param_map: {}
+    axdata: null
+    akshare: null
+
+  tdx_stock_list:
+    desc: "通达信股票列表"
+    providers: [tdx]
+    tdx:
+      interface: stock_list
+      param_map: {}
+    axdata: null
+    akshare: null
+
+  tdx_index_list:
+    desc: "通达信指数列表"
+    providers: [tdx]
+    tdx:
+      interface: index_list
+      param_map: {}
+    axdata: null
+    akshare: null
+
+  tdx_f10_info:
+    desc: "通达信F10信息"
+    providers: [tdx]
+    tdx:
+      interface: f10_info
+      param_map: {}
+    axdata: null
+    akshare: null

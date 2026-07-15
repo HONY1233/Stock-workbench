@@ -26,6 +26,14 @@ class Provider:
 
 
 PROVIDERS: dict[str, Provider] = {
+    "tdx": Provider(
+        id="tdx",
+        name="通达信",
+        description="通达信行情服务器，支持A股/港股/美股/期货实时行情、K线、技术指标",
+        keywords=["tdx", "tdxquant", "通达信", "opentdx"],
+        supports=["realtime", "daily", "kline", "tick", "f10", "indicator", "futures", "hk_stock", "us_stock"],
+        reliability=0.95,
+    ),
     "sina": Provider(
         id="sina",
         name="新浪财经",

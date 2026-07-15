@@ -106,9 +106,10 @@ class Router:
         interface_providers = self.get_interface_providers(interface)
         axdata_cfg = cfg.get("axdata")
         akshare_cfg = cfg.get("akshare")
+        tdx_cfg = cfg.get("tdx")
 
         # 指定 provider 路由
-        if sp not in ("any", "axdata_only", "akshare_only", ""):
+        if sp not in ("any", "axdata_only", "akshare_only", "tdx_only", ""):
             target_provider = sp
             if target_provider not in interface_providers:
                 return RouteResult(
@@ -130,6 +131,11 @@ class Router:
                     ok, data, source = self._call_source("akshare", akshare_cfg, **params)
                     if ok:
                         return RouteResult(success=True, data=data, provider=target_provider, source=source)
+
+            if tdx_cfg and target_provider == "tdx":
+                ok, data, source = self._call_source("tdx", tdx_cfg, **params)
+                if ok:
+                    return RouteResult(success=True, data=data, provider="tdx", source=source)
 
             return RouteResult(
                 success=False, data=[], provider=target_provider,
@@ -173,6 +179,10 @@ class Router:
         elif source_type == "akshare":
             from core.registry import _call_akshare
             return _call_akshare(cfg, **params)
+        elif source_type == "tdx":
+            from core.tdx_adapter import call_tdx
+            interface = cfg.get("interface", "")
+            return call_tdx(interface, **params)
         return False, [], "unknown"
 
     def list_routes(self) -> dict[str, dict]:
@@ -182,11 +192,13 @@ class Router:
             providers = self.get_interface_providers(interface)
             axdata_iface = cfg.get("axdata", {}).get("interface") if cfg.get("axdata") else None
             akshare_func = cfg.get("akshare", {}).get("func") if cfg.get("akshare") else None
+            tdx_iface = cfg.get("tdx", {}).get("interface") if cfg.get("tdx") else None
             result[interface] = {
                 "description": cfg.get("desc", ""),
                 "providers": providers,
                 "axdata": axdata_iface,
                 "akshare": akshare_func,
+                "tdx": tdx_iface,
             }
         return result
 
