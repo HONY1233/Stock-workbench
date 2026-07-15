@@ -462,7 +462,7 @@ sources:
     desc: "限售解禁日历"
     axdata: null
     akshare:
-      func: stock_restricted_release_queue_sse
+      func: stock_restricted_release_queue_em
       param_map: {}
       symbol_fmt: null
       drop_params: [symbol, code]

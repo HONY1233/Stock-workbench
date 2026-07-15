@@ -348,28 +348,92 @@ class SourceRegistry:
         return {name: cfg.get("desc", "") for name, cfg in self.sources.items()}
 
     def get_providers(self) -> set[str]:
-        """获取所有数据来源提供商列表。"""
+        """获取所有数据来源提供商列表（从 axdata/akshare 接口名自动推断）。"""
         providers = set()
+        # 优先使用 YAML 中的 providers 字段
         for cfg in self.sources.values():
             for p in cfg.get("providers", []):
                 providers.add(p)
+
+        # 如果 YAML 没有 providers 字段，从接口名推断
+        if not providers:
+            for name, cfg in self.sources.items():
+                # 从 axdata 接口名推断
+                axdata_iface = cfg.get("axdata", {}).get("interface", "") if cfg.get("axdata") else ""
+                if axdata_iface:
+                    if "eastmoney" in axdata_iface:
+                        providers.add("eastmoney")
+                    elif "cls" in axdata_iface:
+                        providers.add("cls")
+                    elif "kph" in axdata_iface:
+                        providers.add("kph")
+                    elif "sina" in axdata_iface:
+                        providers.add("sina")
+                    elif "cninfo" in axdata_iface:
+                        providers.add("cninfo")
+                    elif "tencent" in axdata_iface or "tx" in axdata_iface:
+                        providers.add("tencent")
+
+                # 从 akshare 函数名推断
+                ak_func = cfg.get("akshare", {}).get("func", "") if cfg.get("akshare") else ""
+                if ak_func:
+                    if "_em" in ak_func:
+                        providers.add("eastmoney")
+                    elif "_sina" in ak_func:
+                        providers.add("sina")
+                    elif "_ths" in ak_func:
+                        providers.add("ths")
+                    elif "_ws" in ak_func:
+                        providers.add("wallstreet")
+                    elif "_shmet" in ak_func:
+                        providers.add("shmet")
+                    elif "_sse" in ak_func:
+                        providers.add("sse")
+                    elif "_cctv" in ak_func:
+                        providers.add("cctv")
+                    elif "_baidu" in ak_func:
+                        providers.add("baidu")
+                    elif "bloomberg" in ak_func:
+                        providers.add("bloomberg")
+                    elif "_cninfo" in ak_func:
+                        providers.add("cninfo")
+
         return providers
 
     def list_by_provider(self, provider: str) -> dict[str, dict]:
-        """按数据来源提供商筛选接口。
-
-        Args:
-            provider: 提供商名称，如 sina, eastmoney, cls 等
-
-        Returns:
-            该提供商支持的接口字典 {alias: config}
-        """
+        """按数据来源提供商筛选接口。"""
         provider_lower = provider.lower()
         result = {}
         for name, cfg in self.sources.items():
+            # 先查 YAML 的 providers 字段
             providers = [p.lower() for p in cfg.get("providers", [])]
             if provider_lower in providers:
                 result[name] = cfg
+                continue
+
+            # 否则从接口名推断
+            axdata_iface = cfg.get("axdata", {}).get("interface", "") if cfg.get("axdata") else ""
+            ak_func = cfg.get("akshare", {}).get("func", "") if cfg.get("akshare") else ""
+
+            provider_map = {
+                "eastmoney": ["eastmoney", "_em"],
+                "sina": ["sina"],
+                "cls": ["cls"],
+                "ths": ["_ths"],
+                "tencent": ["tencent", "tx"],
+                "cninfo": ["cninfo"],
+                "kph": ["kph"],
+                "sse": ["_sse"],
+                "wallstreet": ["_ws", "wallstreet"],
+                "shmet": ["_shmet"],
+                "cctv": ["_cctv"],
+                "baidu": ["_baidu"],
+                "bloomberg": ["bloomberg"],
+            }
+            keywords = provider_map.get(provider_lower, [])
+            if any(kw in axdata_iface or kw in ak_func for kw in keywords):
+                result[name] = cfg
+
         return result
 
     def get_source_providers(self, name: str) -> list[str]:
