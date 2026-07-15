@@ -40,6 +40,11 @@ from core.helpers import _df_to_records
 from core.tiers import Tier, TOOL_TIERS, tier_info
 from core.registry import SourceRegistry, load_custom_sources, call_unified
 from core.translate import _translate_records
+from core.tool_providers import (
+    get_tool_providers,
+    list_all_providers as _list_custom_providers,
+    list_tools_by_provider as _list_custom_tools_by_provider,
+)
 
 mcp = FastMCP("akshare")
 
@@ -54,12 +59,13 @@ _custom_tools = load_custom_sources(mcp)
 
 # ── 统一数据查询接口 ──────────────────────────────────────────
 
-@mcp.tool(description="统一数据查询接口：整合 akshare + axdata 两个数据源，自动路由到最佳来源，支持英文翻译")
+@mcp.tool(description="统一数据查询接口：整合 akshare + axdata 两个数据源，自动路由到最佳来源，支持英文翻译和按需指定数据源")
 def data_query(
     interface: str,
     params_json: Optional[str] = None,
     limit: int = 0,
     translate: bool = True,
+    source_preference: str = "any",
 ) -> str:
     """统一数据查询接口。
 
@@ -87,13 +93,18 @@ def data_query(
         params_json: JSON 格式的参数字典，如 {"symbol": "600519"}
         limit: 返回条数限制，0=不限
         translate: 是否翻译英文内容，默认 True
+        source_preference: 数据源偏好，可选：
+            - "any": 自动路由（默认）
+            - "axdata_only": 只调用 axdata
+            - "akshare_only": 只调用 akshare
+            - provider 名称: 如 "sina", "eastmoney", "cls" 等
 
     Returns:
         JSON 格式的查询结果
     """
     try:
         params = json.loads(params_json) if params_json else {}
-        ok, data, source = call_unified(interface, _registry.sources, **params)
+        ok, data, source = call_unified(interface, _registry.sources, source_preference=source_preference, **params)
 
         if not ok:
             err = data[0].get("error", "未知错误") if data else "未知错误"
@@ -137,6 +148,7 @@ def data_interfaces() -> str:
         interfaces.append({
             "alias": alias,
             "description": cfg.get("desc", ""),
+            "providers": cfg.get("providers", []),
             "axdata_interface": axdata_iface,
             "akshare_function": akshare_func,
             "priority": "axdata" if axdata_iface else ("akshare" if akshare_func else "none"),
@@ -144,9 +156,168 @@ def data_interfaces() -> str:
     return json.dumps({
         "ok": True,
         "count": len(interfaces),
-        "note": "data_query 支持用 alias、axdata_interface 或 akshare_function 调用",
+        "note": "data_query 支持用 alias、axdata_interface 或 akshare_function 调用；可用 list_interfaces_by_source 按来源分类查看",
         "interfaces": interfaces,
     }, ensure_ascii=False)
+
+
+@mcp.tool(description="列出所有数据来源提供商（如 sina、eastmoney、cls 等）")
+def list_source_providers() -> str:
+    """列出所有数据来源提供商。
+
+    返回 YAML 配置接口和自定义工具中涉及的所有数据提供商。
+
+    Returns:
+        JSON 格式的提供商列表及各自工具数量
+    """
+    try:
+        # 从 YAML 配置收集
+        yaml_providers = _registry.get_providers()
+        # 从自定义工具收集
+        custom_providers = _list_custom_providers()
+        all_providers = yaml_providers | custom_providers
+
+        result = {}
+        for p in sorted(all_providers):
+            yaml_tools = list(_registry.list_by_provider(p).keys())
+            custom_tools = _list_custom_tools_by_provider(p)
+            result[p] = {
+                "yaml_interfaces": yaml_tools,
+                "custom_tools": custom_tools,
+                "total_count": len(yaml_tools) + len(custom_tools),
+            }
+
+        return json.dumps({
+            "ok": True,
+            "count": len(result),
+            "providers": result,
+        }, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"ok": False, "error": f"{type(e).__name__}: {str(e)[:200]}"}, ensure_ascii=False)
+
+
+@mcp.tool(description="按数据来源提供商分类列出所有接口和工具")
+def list_interfaces_by_source(provider: str = "") -> str:
+    """按数据来源提供商筛选并列出接口和工具。
+
+    Args:
+        provider: 提供商名称，如 sina、eastmoney、cls、tencent、ths 等。
+                 传入空字符串则返回所有提供商的分类汇总。
+
+    Returns:
+        JSON 格式的分类结果
+    """
+    try:
+        if not provider:
+            # 返回所有提供商的分类汇总
+            all_providers = _registry.get_providers() | _list_custom_providers()
+            summary = {}
+            for p in sorted(all_providers):
+                yaml_tools = list(_registry.list_by_provider(p).keys())
+                custom_tools = _list_custom_tools_by_provider(p)
+                summary[p] = {
+                    "yaml_interfaces": yaml_tools,
+                    "custom_tools": custom_tools,
+                    "total_count": len(yaml_tools) + len(custom_tools),
+                }
+            return json.dumps({
+                "ok": True,
+                "count": len(summary),
+                "note": "传入 provider 参数可查看某个提供商的详细接口信息",
+                "by_provider": summary,
+            }, ensure_ascii=False)
+
+        # 返回指定提供商的详细接口
+        provider_lower = provider.lower()
+        yaml_interfaces = _registry.list_by_provider(provider_lower)
+        custom_tools = _list_custom_tools_by_provider(provider_lower)
+
+        yaml_detail = []
+        for alias, cfg in yaml_interfaces.items():
+            yaml_detail.append({
+                "alias": alias,
+                "description": cfg.get("desc", ""),
+                "providers": cfg.get("providers", []),
+                "axdata_interface": cfg.get("axdata", {}).get("interface") if cfg.get("axdata") else None,
+                "akshare_function": cfg.get("akshare", {}).get("func") if cfg.get("akshare") else None,
+            })
+
+        return json.dumps({
+            "ok": True,
+            "provider": provider,
+            "yaml_interfaces": yaml_detail,
+            "custom_tools": custom_tools,
+            "total_count": len(yaml_detail) + len(custom_tools),
+        }, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"ok": False, "error": f"{type(e).__name__}: {str(e)[:200]}"}, ensure_ascii=False)
+
+
+@mcp.tool(description="按指定数据来源查询数据，只调用该来源的接口，不会全部跑一遍")
+def query_by_source(
+    provider: str,
+    interface: str,
+    params_json: Optional[str] = None,
+    limit: int = 0,
+    translate: bool = True,
+) -> str:
+    """按指定数据来源提供商查询数据，实现按需调用。
+
+    只调用指定 provider 的接口，不会 fallback 到其他来源。
+    适合明确知道数据来源、不想触发多源调用的场景。
+
+    Args:
+        provider: 数据来源提供商，如 sina、eastmoney、cls、tencent 等
+        interface: 接口名称（统一别名）
+        params_json: JSON 格式的参数字典
+        limit: 返回条数限制，0=不限
+        translate: 是否翻译英文内容，默认 True
+
+    Returns:
+        JSON 格式的查询结果
+    """
+    try:
+        cfg = _registry.get_source(interface)
+        if not cfg:
+            return json.dumps({
+                "ok": False,
+                "error": f"接口 {interface} 不存在",
+            }, ensure_ascii=False)
+
+        providers = [p.lower() for p in cfg.get("providers", [])]
+        if provider.lower() not in providers:
+            return json.dumps({
+                "ok": False,
+                "error": f"接口 {interface} 不支持 provider '{provider}'，支持的 providers: {cfg.get('providers', [])}",
+            }, ensure_ascii=False)
+
+        params = json.loads(params_json) if params_json else {}
+        ok, data, source = call_unified(interface, _registry.sources, source_preference=provider, **params)
+
+        if not ok:
+            err = data[0].get("error", "未知错误") if data else "未知错误"
+            return json.dumps({"ok": False, "interface": interface, "provider": provider, "source": source, "error": err}, ensure_ascii=False)
+
+        if limit and len(data) > limit:
+            data = data[:limit]
+
+        translated = False
+        if translate and data:
+            tfields = set()
+            for src_key in ("axdata", "akshare"):
+                src_cfg = cfg.get(src_key)
+                if src_cfg and src_cfg.get("translate_fields"):
+                    tfields.update(src_cfg["translate_fields"])
+            if tfields:
+                _translate_records(data, fields=tfields, translate=True)
+                translated = True
+
+        return json.dumps({
+            "ok": True, "interface": interface, "provider": provider, "source": source,
+            "count": len(data), "translated": translated, "data": data,
+        }, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"ok": False, "interface": interface, "error": f"{type(e).__name__}: {str(e)[:200]}"}, ensure_ascii=False)
 
 
 @mcp.tool(description="查询工具的数据源等级（L0-L3）和兜底链路")
