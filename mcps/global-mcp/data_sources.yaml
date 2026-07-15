@@ -1,0 +1,77 @@
+providers:
+  sina:
+    name: 新浪财经
+    description: 新浪财经数据接口
+    supports:
+    - realtime
+    - daily
+    - index
+    - futures
+    - lhb
+  eastmoney:
+    name: 东方财富
+    description: 东方财富数据接口
+    supports:
+    - realtime
+    - sector
+    - fund_flow
+  bloomberg:
+    name: 彭博社
+    description: 彭博社财经新闻
+    supports:
+    - news
+    - billionaires
+  reuters:
+    name: 路透社
+    description: 路透社财经新闻
+    supports:
+    - news
+sources:
+  index_us_daily:
+    desc: 美股指数日线
+    providers:
+    - sina
+    axdata:
+      interface: index_us_stock_sina
+      param_map: {}
+      symbol_fmt: null
+    akshare:
+      func: index_us_stock_sina
+      param_map: {}
+      symbol_fmt: null
+  index_hk_daily:
+    desc: 港股指数日线
+    providers:
+    - sina
+    axdata:
+      interface: stock_hk_index_daily_sina
+      param_map: {}
+      symbol_fmt: null
+    akshare:
+      func: stock_hk_index_daily_sina
+      param_map: {}
+      symbol_fmt: null
+  index_global_list:
+    desc: 全球指数代码表
+    providers:
+    - sina
+    axdata: null
+    akshare:
+      func: index_global_name_table
+      param_map: {}
+      symbol_fmt: null
+      drop_params:
+      - symbol
+      - code
+  futures_global_spot:
+    desc: 全球期货行情
+    providers:
+    - eastmoney
+    axdata: null
+    akshare:
+      func: futures_global_spot_em
+      param_map: {}
+      symbol_fmt: null
+      drop_params:
+      - symbol
+      - code

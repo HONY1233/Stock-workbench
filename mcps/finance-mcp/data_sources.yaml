@@ -1,0 +1,109 @@
+providers:
+  eastmoney:
+    name: 东方财富
+    description: 东方财富数据接口
+    supports:
+    - realtime
+    - sector
+    - fund_flow
+  sse:
+    name: 上交所
+    description: 上海证券交易所
+    supports:
+    - margin
+    - block_trade
+  ths:
+    name: 同花顺
+    description: 同花顺数据接口
+    supports:
+    - sector
+    - research
+sources:
+  northbound_flow:
+    desc: 北向资金
+    providers:
+    - eastmoney
+    axdata: null
+    akshare:
+      func: stock_hsgt_individual_em
+      param_map: {}
+      symbol_fmt: null
+      drop_params:
+      - symbol
+      - code
+  stock_fund_flow:
+    desc: 个股资金流向
+    providers:
+    - eastmoney
+    axdata: null
+    akshare:
+      func: stock_individual_fund_flow
+      param_map: {}
+      symbol_fmt: null
+      drop_params: []
+  margin_trading:
+    desc: 融资融券
+    providers:
+    - sse
+    axdata: null
+    akshare:
+      func: stock_margin_sse
+      param_map: {}
+      symbol_fmt: null
+      drop_params:
+      - symbol
+      - code
+  block_trade:
+    desc: 大宗交易
+    providers:
+    - sse
+    axdata: null
+    akshare:
+      func: stock_dzjy_mrmx
+      param_map: {}
+      symbol_fmt: null
+      drop_params:
+      - symbol
+      - code
+  holder_count:
+    desc: 股东户数变化
+    providers:
+    - eastmoney
+    axdata: null
+    akshare:
+      func: stock_zh_a_gdhs
+      param_map: {}
+      symbol_fmt: null
+      drop_params: []
+  lockup_release:
+    desc: 限售解禁日历
+    providers:
+    - eastmoney
+    axdata: null
+    akshare:
+      func: stock_restricted_release_queue_em
+      param_map: {}
+      symbol_fmt: null
+      drop_params:
+      - symbol
+      - code
+  research_report:
+    desc: 研报盈利预测
+    providers:
+    - ths
+    axdata: null
+    akshare:
+      func: stock_profit_forecast_ths
+      param_map: {}
+      symbol_fmt: null
+      drop_params: []
+  eps_forecast:
+    desc: 一致预期EPS
+    providers:
+    - ths
+    axdata: null
+    akshare:
+      func: stock_profit_forecast_ths
+      param_map: {}
+      symbol_fmt: null
+      drop_params: []

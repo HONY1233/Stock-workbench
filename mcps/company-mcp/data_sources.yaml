@@ -1,0 +1,39 @@
+providers:
+  cninfo:
+    name: 巨潮资讯
+    description: 巨潮资讯网
+    supports:
+    - announcement
+    - profile
+    - financial
+sources:
+  cninfo_announcements:
+    desc: 巨潮公告列表
+    providers:
+    - cninfo
+    axdata:
+      interface: cninfo_announcements
+      param_map:
+        symbol: code
+      symbol_fmt: null
+    akshare: null
+  stock_profile_cninfo:
+    desc: 公司概况（巨潮）
+    providers:
+    - cninfo
+    axdata:
+      interface: stock_profile_cninfo
+      param_map:
+        symbol: code
+      symbol_fmt: null
+    akshare: null
+  stock_dividend_cninfo:
+    desc: 分红配送（巨潮）
+    providers:
+    - cninfo
+    axdata:
+      interface: stock_dividend_cninfo
+      param_map:
+        symbol: code
+      symbol_fmt: null
+    akshare: null

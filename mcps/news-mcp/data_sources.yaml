@@ -1,0 +1,143 @@
+providers:
+  cls:
+    name: 财联社
+    description: 财联社财经资讯
+    supports:
+    - news
+    - emotion
+    - limit_up
+  kph:
+    name: 开盘红
+    description: 开盘红市场情绪
+    supports:
+    - emotion
+  eastmoney:
+    name: 东方财富
+    description: 东方财富数据接口
+    supports:
+    - realtime
+    - sector
+    - fund_flow
+  sina:
+    name: 新浪财经
+    description: 新浪财经数据接口
+    supports:
+    - realtime
+    - daily
+    - index
+    - futures
+    - lhb
+  ths:
+    name: 同花顺
+    description: 同花顺数据接口
+    supports:
+    - sector
+    - research
+sources:
+  cls_telegraph:
+    desc: 财联社电报快讯
+    providers:
+    - cls
+    axdata:
+      interface: cls_news_telegraph
+      param_map: {}
+      symbol_fmt: null
+    akshare: null
+  cls_market_emotion:
+    desc: 财联社市场情绪
+    providers:
+    - cls
+    axdata:
+      interface: cls_market_emotion
+      param_map: {}
+      symbol_fmt: null
+    akshare: null
+  cls_limit_up_pool:
+    desc: 财联社涨停池
+    providers:
+    - cls
+    axdata:
+      interface: cls_limit_up_pool
+      param_map: {}
+      symbol_fmt: null
+    akshare: null
+  cls_sector_heat:
+    desc: 财联社板块热度
+    providers:
+    - cls
+    axdata:
+      interface: cls_sector_heat
+      param_map: {}
+      symbol_fmt: null
+    akshare: null
+  cls_market_wind:
+    desc: 财联社今日风口
+    providers:
+    - cls
+    axdata:
+      interface: cls_market_wind
+      param_map: {}
+      symbol_fmt: null
+    akshare: null
+  cls_market_mainline:
+    desc: 财联社今日主线
+    providers:
+    - cls
+    axdata:
+      interface: cls_market_mainline
+      param_map: {}
+      symbol_fmt: null
+    akshare: null
+  kph_market_emotion:
+    desc: 开盘红市场情绪
+    providers:
+    - kph
+    axdata:
+      interface: kph_market_emotion
+      param_map: {}
+      symbol_fmt: null
+    akshare: null
+  global_news_em:
+    desc: 全球财经新闻（东方财富）
+    providers:
+    - eastmoney
+    axdata: null
+    akshare:
+      func: stock_info_global_em
+      param_map: {}
+      symbol_fmt: null
+      drop_params:
+      - symbol
+      - code
+      translate_fields:
+      - 标题
+      - 摘要
+  global_news_sina:
+    desc: 全球财经快讯（新浪）
+    providers:
+    - sina
+    axdata: null
+    akshare:
+      func: stock_info_global_sina
+      param_map: {}
+      symbol_fmt: null
+      drop_params:
+      - symbol
+      - code
+      translate_fields:
+      - 内容
+  global_news_ths:
+    desc: 全球财经新闻（同花顺）
+    providers:
+    - ths
+    axdata: null
+    akshare:
+      func: stock_info_global_ths
+      param_map: {}
+      symbol_fmt: null
+      drop_params:
+      - symbol
+      - code
+      translate_fields:
+      - 标题
+      - 内容

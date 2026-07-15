@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "company-mcp": {
+      "command": "E:\\python\\python.exe",
+      "args": [
+        "E:\\Trae data\\Stock-workbench\\mcps\\company-mcp\\server.py"
+      ],
+      "env": {
+        "START_MCP_TIMEOUT_MS": "60000",
+        "RUN_MCP_TIMEOUT_MS": "120000"
+      }
+    }
+  }
+}

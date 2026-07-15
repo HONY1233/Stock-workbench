@@ -1,0 +1,260 @@
+providers:
+  sina:
+    name: 新浪财经
+    description: 新浪财经数据接口
+    supports:
+    - realtime
+    - daily
+    - index
+    - futures
+    - lhb
+  eastmoney:
+    name: 东方财富
+    description: 东方财富数据接口
+    supports:
+    - realtime
+    - sector
+    - fund_flow
+  ths:
+    name: 同花顺
+    description: 同花顺数据接口
+    supports:
+    - sector
+    - research
+  tencent:
+    name: 腾讯财经
+    description: 腾讯财经数据接口
+    supports:
+    - realtime
+    - daily
+  tdx:
+    name: 通达信
+    description: 通达信行情服务器，支持A股/港股/美股/期货实时行情、K线、技术指标
+    supports:
+    - realtime
+    - daily
+    - kline
+    - tick
+    - f10
+    - indicator
+    - futures
+    - hk_stock
+    - us_stock
+sources:
+  stock_daily:
+    desc: A股日K线
+    providers:
+    - tencent
+    - sina
+    axdata:
+      interface: stock_zh_a_hist_tx
+      param_map:
+        symbol: code
+      symbol_fmt: tdx
+    akshare:
+      func: stock_zh_a_daily
+      param_map: {}
+      symbol_fmt: sina
+      extra:
+        adjust: qfq
+  stock_realtime:
+    desc: A股实时行情
+    providers:
+    - eastmoney
+    - sina
+    axdata: null
+    akshare:
+      func: stock_zh_a_spot_em
+      fallback_func: stock_zh_a_spot
+      param_map: {}
+      symbol_fmt: null
+      filter_by: 代码
+      drop_params:
+      - symbol
+      - code
+      sina_fallback: true
+  index_daily:
+    desc: A股指数日K线
+    providers:
+    - sina
+    axdata: null
+    akshare:
+      func: stock_zh_index_daily
+      param_map: {}
+      symbol_fmt: sina
+  index_realtime:
+    desc: A股指数实时行情
+    providers:
+    - sina
+    - eastmoney
+    axdata:
+      interface: stock_zh_index_spot_sina
+      param_map: {}
+      symbol_fmt: null
+    akshare:
+      func: stock_zh_index_spot_em
+      param_map: {}
+      symbol_fmt: null
+      drop_params:
+      - symbol
+      - code
+      sina_fallback: true
+  etf_daily:
+    desc: ETF日K线
+    providers:
+    - sina
+    axdata:
+      interface: fund_etf_hist_sina
+      param_map: {}
+      symbol_fmt: sina
+    akshare:
+      func: fund_etf_hist_sina
+      param_map: {}
+      symbol_fmt: sina
+  etf_realtime:
+    desc: ETF实时行情
+    providers:
+    - eastmoney
+    axdata: null
+    akshare:
+      func: fund_etf_spot_em
+      param_map: {}
+      symbol_fmt: null
+      filter_by: 代码
+      drop_params:
+      - symbol
+      - code
+      sina_fallback: true
+  limit_up_pool:
+    desc: 涨停池
+    providers:
+    - eastmoney
+    axdata:
+      interface: eastmoney_limit_up_pool
+      param_map: {}
+      symbol_fmt: null
+    akshare: null
+  limit_down_pool:
+    desc: 跌停池
+    providers:
+    - eastmoney
+    axdata:
+      interface: eastmoney_limit_down_pool
+      param_map: {}
+      symbol_fmt: null
+    akshare: null
+  sector_realtime:
+    desc: 板块实时行情
+    providers:
+    - eastmoney
+    axdata:
+      interface: eastmoney_sector_realtime
+      param_map: {}
+      symbol_fmt: null
+    akshare: null
+  market_index_realtime:
+    desc: 大盘指数实时行情
+    providers:
+    - eastmoney
+    axdata:
+      interface: eastmoney_market_index_realtime
+      param_map: {}
+      symbol_fmt: null
+    akshare: null
+  lhb_daily:
+    desc: 龙虎榜每日详情
+    providers:
+    - sina
+    axdata:
+      interface: stock_lhb_detail_daily_sina
+      param_map: {}
+      symbol_fmt: null
+    akshare: null
+  lhb_institution:
+    desc: 龙虎榜机构席位
+    providers:
+    - sina
+    axdata:
+      interface: stock_lhb_jgmx_sina
+      param_map: {}
+      symbol_fmt: null
+      drop_params:
+      - date
+    akshare: null
+  limit_up_broken:
+    desc: 炸板池
+    providers:
+    - eastmoney
+    axdata: null
+    akshare:
+      func: stock_zt_pool_dtgc_em
+      param_map: {}
+      symbol_fmt: null
+      drop_params:
+      - symbol
+      - code
+  limit_up_previous:
+    desc: 昨日涨停池
+    providers:
+    - eastmoney
+    axdata: null
+    akshare:
+      func: stock_zt_pool_previous_em
+      param_map: {}
+      symbol_fmt: null
+      drop_params:
+      - symbol
+      - code
+  limit_up_strong:
+    desc: 强势股池
+    providers:
+    - eastmoney
+    axdata: null
+    akshare:
+      func: stock_zt_pool_strong_em
+      param_map: {}
+      symbol_fmt: null
+      drop_params:
+      - symbol
+      - code
+  hot_rank:
+    desc: 东财人气榜
+    providers:
+    - eastmoney
+    - xueqiu
+    axdata: null
+    akshare:
+      func: stock_hot_rank_em
+      fallback_func: stock_hot_follow_xq
+      param_map: {}
+      symbol_fmt: null
+      drop_params:
+      - symbol
+      - code
+  concept_belong:
+    desc: 概念板块归属
+    providers:
+    - eastmoney
+    - ths
+    axdata: null
+    akshare:
+      func: stock_board_concept_name_em
+      fallback_func: stock_board_concept_name_ths
+      param_map: {}
+      symbol_fmt: null
+      drop_params:
+      - symbol
+      - code
+  etf_spot:
+    desc: ETF实时行情列表
+    providers:
+    - eastmoney
+    axdata: null
+    akshare:
+      func: fund_etf_spot_em
+      param_map: {}
+      symbol_fmt: null
+      drop_params:
+      - symbol
+      - code
+      filter_by: 代码

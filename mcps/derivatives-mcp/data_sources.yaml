@@ -1,0 +1,73 @@
+providers:
+  sina:
+    name: 新浪财经
+    description: 新浪财经数据接口
+    supports:
+    - realtime
+    - daily
+    - index
+    - futures
+    - lhb
+  eastmoney:
+    name: 东方财富
+    description: 东方财富数据接口
+    supports:
+    - realtime
+    - sector
+    - fund_flow
+sources:
+  futures_daily:
+    desc: 期货日线（主力合约）
+    providers:
+    - sina
+    axdata:
+      interface: futures_main_sina
+      param_map: {}
+      symbol_fmt: null
+    akshare:
+      func: futures_zh_daily_sina
+      param_map: {}
+      symbol_fmt: null
+  futures_realtime:
+    desc: 期货实时行情
+    providers:
+    - sina
+    axdata:
+      interface: futures_display_main_sina
+      param_map: {}
+      symbol_fmt: null
+    akshare:
+      func: futures_zh_realtime_sina
+      param_map: {}
+      symbol_fmt: null
+      filter_by: symbol
+      drop_params:
+      - symbol
+  option_commodity_list:
+    desc: 商品期权品种
+    providers:
+    - sina
+    axdata:
+      interface: option_commodity_contract_sina
+      param_map: {}
+      symbol_fmt: null
+    akshare: null
+  option_cffex_hs300_list:
+    desc: 沪深300期权合约
+    providers:
+    - sina
+    axdata:
+      interface: option_cffex_hs300_list_sina
+      param_map: {}
+      symbol_fmt: null
+    akshare: null
+  option_t_quote:
+    desc: ETF期权行情
+    providers:
+    - eastmoney
+    axdata: null
+    akshare:
+      func: option_current_em
+      param_map: {}
+      symbol_fmt: null
+      drop_params: []
