@@ -12,11 +12,8 @@ from __future__ import annotations
 import json
 import os
 import re
-import time
-from typing import Optional
 
-from core.helpers import _json_ok, _json_fail
-
+from pydantic import BaseModel, Field
 
 XQ_BASE = "https://xueqiu.com"
 XQ_API = "https://xueqiu.com/v4/statuses"
@@ -41,6 +38,30 @@ CATEGORY_MAP = {
     "保险": 114,
 }
 
+_READ_ONLY = {"readOnlyHint": True}
+
+
+class _XueqiuHotPostsInput(BaseModel):
+    category: str = Field("全部", description="分类：全部、沪深、港美股、基金、房产、港股、美股、私募、保险")
+    count: int = Field(20, ge=1, le=500, description="返回条数，默认 20")
+    max_id: int = Field(-1, description="翻页游标，-1 表示第一页")
+
+
+class _XueqiuStockPostsInput(BaseModel):
+    symbol: str = Field("SH600519", description="股票代码，雪球格式 SH600519 / SZ000001")
+    count: int = Field(20, ge=1, le=500, description="返回条数，默认 20")
+    max_id: int = Field(-1, description="翻页游标，-1 表示第一页")
+
+
+class _XueqiuCommentsInput(BaseModel):
+    post_id: str = Field("", description="帖子ID（从热帖或个股讨论接口返回的 id 字段）")
+    count: int = Field(20, ge=1, le=500, description="每页条数，默认 20")
+    page: int = Field(1, ge=1, description="页码，默认 1")
+
+
+class _XueqiuStatusInput(BaseModel):
+    pass
+
 
 def _get_session():
     """获取带 cookie 的 session。"""
@@ -54,14 +75,12 @@ def _get_session():
         return None, "未设置 XUEQIU_TOKEN 环境变量"
 
     # 构造 cookie
-    cookie_str = f"xq_a_token={token}"
-    # 先访问首页获取 acw_tc 等辅助 cookie
     try:
         resp = requests.get(XQ_BASE, headers=HEADERS, timeout=15)
-        cookies = dict(resp.cookies) if hasattr(resp, 'cookies') else {}
+        cookies = dict(resp.cookies) if hasattr(resp, "cookies") else {}
         cookies["xq_a_token"] = token
         return requests, cookies
-    except Exception as e:
+    except Exception:
         return requests, {"xq_a_token": token}
 
 
@@ -120,74 +139,82 @@ def _normalize_comment(c: dict) -> dict:
 def register(mcp) -> list[str]:
     """注册雪球相关 MCP 工具。"""
 
-    @mcp.tool(description="雪球热门动态：全平台/各分类热帖排行，需设置 XUEQIU_TOKEN 环境变量")
+    @mcp.tool(
+        name="xueqiu_hot_posts",
+        description="雪球热门动态：全平台/各分类热帖排行，需设置 XUEQIU_TOKEN 环境变量",
+        annotations=_READ_ONLY,
+    )
     def xueqiu_hot_posts(
         category: str = "全部",
         count: int = 20,
         max_id: int = -1,
     ) -> str:
-        """获取雪球热门动态。
-
-        Args:
-            category: 分类：全部、沪深、港美股、基金、房产、港股、美股、私募、保险
-            count: 返回条数，默认 20
-            max_id: 翻页游标，-1 表示第一页
-
-        Returns:
-            JSON 格式的热门帖子列表
-        """
         try:
+            params = _XueqiuHotPostsInput(category=category, count=count, max_id=max_id)
             requests, cookies = _get_session()
             if requests is None:
-                return _json_fail(cookies)
+                return json.dumps(
+                    {"ok": False, "data": [], "count": 0, "error": cookies},
+                    ensure_ascii=False,
+                )
 
-            cat = CATEGORY_MAP.get(category, -1)
+            cat = CATEGORY_MAP.get(params.category, -1)
             url = f"{XQ_API}/public_timeline_by_category.json"
-            params = {
+            req_params = {
                 "since_id": -1,
-                "max_id": max_id,
-                "count": count,
+                "max_id": params.max_id,
+                "count": params.count,
                 "category": cat,
             }
-            resp = requests.get(url, headers=HEADERS, cookies=cookies, params=params, timeout=15)
+            resp = requests.get(url, headers=HEADERS, cookies=cookies, params=req_params, timeout=15)
             data = resp.json()
 
             if isinstance(data, dict) and data.get("error_code") and data["error_code"] != 0:
-                return _json_fail(f"雪球API错误: {data.get('error_description', data['error_code'])}")
+                return json.dumps(
+                    {
+                        "ok": False,
+                        "data": [],
+                        "count": 0,
+                        "error": f"雪球API错误: {data.get('error_description', data['error_code'])}",
+                    },
+                    ensure_ascii=False,
+                )
 
             items = data.get("list", []) if isinstance(data, dict) else []
             results = [_normalize_item(item) for item in items]
             results = [r for r in results if r.get("id")]
 
-            next_max_id = data.get("next_max_id", -1) if isinstance(data, dict) else -1
-            return _json_ok(results, source=f"xueqiu:hot_{category}",
-                            next_max_id=next_max_id)
+            return json.dumps(
+                {"ok": True, "data": results, "count": len(results)},
+                ensure_ascii=False,
+            )
         except Exception as e:
-            return _json_fail(f"{type(e).__name__}: {str(e)[:200]}")
+            return json.dumps(
+                {"ok": False, "data": [], "count": 0, "error": f"{type(e).__name__}: {str(e)[:200]}"},
+                ensure_ascii=False,
+            )
 
-    @mcp.tool(description="雪球个股讨论：某只股票的用户发帖讨论，需设置 XUEQIU_TOKEN 环境变量")
+    @mcp.tool(
+        name="xueqiu_stock_posts",
+        description="雪球个股讨论：某只股票的用户发帖讨论，需设置 XUEQIU_TOKEN 环境变量",
+        annotations=_READ_ONLY,
+    )
     def xueqiu_stock_posts(
         symbol: str = "SH600519",
         count: int = 20,
         max_id: int = -1,
     ) -> str:
-        """获取雪球个股讨论帖。
-
-        Args:
-            symbol: 股票代码，雪球格式 SH600519 / SZ000001
-            count: 返回条数，默认 20
-            max_id: 翻页游标，-1 表示第一页
-
-        Returns:
-            JSON 格式的个股讨论帖列表
-        """
         try:
+            params = _XueqiuStockPostsInput(symbol=symbol, count=count, max_id=max_id)
             requests, cookies = _get_session()
             if requests is None:
-                return _json_fail(cookies)
+                return json.dumps(
+                    {"ok": False, "data": [], "count": 0, "error": cookies},
+                    ensure_ascii=False,
+                )
 
             # 转换代码格式
-            s = symbol.upper().strip()
+            s = params.symbol.upper().strip()
             if not s.startswith("SH") and not s.startswith("SZ") and not s.startswith("HK"):
                 if len(s) == 6:
                     if s[0] in ("6", "9") or s[:2] in ("68", "90"):
@@ -196,121 +223,169 @@ def register(mcp) -> list[str]:
                         s = "SZ" + s
 
             url = f"{XQ_API}/public_timeline_by_symbol.json"
-            params = {
+            req_params = {
                 "symbol": s,
                 "since_id": -1,
-                "max_id": max_id,
-                "count": count,
+                "max_id": params.max_id,
+                "count": params.count,
             }
-            resp = requests.get(url, headers=HEADERS, cookies=cookies, params=params, timeout=15)
+            resp = requests.get(url, headers=HEADERS, cookies=cookies, params=req_params, timeout=15)
             data = resp.json()
 
             if isinstance(data, dict) and data.get("error_code") and data["error_code"] != 0:
-                return _json_fail(f"雪球API错误: {data.get('error_description', data['error_code'])}")
+                return json.dumps(
+                    {
+                        "ok": False,
+                        "data": [],
+                        "count": 0,
+                        "error": f"雪球API错误: {data.get('error_description', data['error_code'])}",
+                    },
+                    ensure_ascii=False,
+                )
 
             items = data.get("list", []) if isinstance(data, dict) else []
             results = [_normalize_item(item) for item in items]
             results = [r for r in results if r.get("id")]
 
-            next_max_id = data.get("next_max_id", -1) if isinstance(data, dict) else -1
-            return _json_ok(results, source=f"xueqiu:stock_{s}",
-                            next_max_id=next_max_id)
+            return json.dumps(
+                {"ok": True, "data": results, "count": len(results)},
+                ensure_ascii=False,
+            )
         except Exception as e:
-            return _json_fail(f"{type(e).__name__}: {str(e)[:200]}")
+            return json.dumps(
+                {"ok": False, "data": [], "count": 0, "error": f"{type(e).__name__}: {str(e)[:200]}"},
+                ensure_ascii=False,
+            )
 
-    @mcp.tool(description="雪球帖子评论：获取某条帖子的用户评论，需设置 XUEQIU_TOKEN 环境变量")
+    @mcp.tool(
+        name="xueqiu_comments",
+        description="雪球帖子评论：获取某条帖子的用户评论，需设置 XUEQIU_TOKEN 环境变量",
+        annotations=_READ_ONLY,
+    )
     def xueqiu_comments(
         post_id: str = "",
         count: int = 20,
         page: int = 1,
     ) -> str:
-        """获取雪球帖子的评论。
-
-        Args:
-            post_id: 帖子ID（从热帖或个股讨论接口返回的 id 字段）
-            count: 每页条数，默认 20
-            page: 页码，默认 1
-
-        Returns:
-            JSON 格式的评论列表
-        """
         try:
-            if not post_id:
-                return _json_fail("缺少 post_id 参数")
+            params = _XueqiuCommentsInput(post_id=post_id, count=count, page=page)
+            if not params.post_id:
+                return json.dumps(
+                    {"ok": False, "data": [], "count": 0, "error": "缺少 post_id 参数"},
+                    ensure_ascii=False,
+                )
 
             requests, cookies = _get_session()
             if requests is None:
-                return _json_fail(cookies)
+                return json.dumps(
+                    {"ok": False, "data": [], "count": 0, "error": cookies},
+                    ensure_ascii=False,
+                )
 
             url = f"{XQ_COMMENT_API}/comments.json"
-            params = {
-                "id": post_id,
-                "count": count,
-                "page": page,
+            req_params = {
+                "id": params.post_id,
+                "count": params.count,
+                "page": params.page,
                 "type": "status",
             }
-            resp = requests.get(url, headers=HEADERS, cookies=cookies, params=params, timeout=15)
+            resp = requests.get(url, headers=HEADERS, cookies=cookies, params=req_params, timeout=15)
             data = resp.json()
 
             if isinstance(data, dict) and data.get("error_code") and data["error_code"] != 0:
-                return _json_fail(f"雪球API错误: {data.get('error_description', data['error_code'])}")
+                return json.dumps(
+                    {
+                        "ok": False,
+                        "data": [],
+                        "count": 0,
+                        "error": f"雪球API错误: {data.get('error_description', data['error_code'])}",
+                    },
+                    ensure_ascii=False,
+                )
 
             comments = data.get("comments", []) if isinstance(data, dict) else []
             results = [_normalize_comment(c) for c in comments]
             results = [r for r in results if r.get("id")]
 
-            total = data.get("totalNumber", data.get("total", len(comments))) if isinstance(data, dict) else len(comments)
-            return _json_ok(results, source="xueqiu:comments",
-                            total=total, page=page, count_per_page=count)
+            return json.dumps(
+                {"ok": True, "data": results, "count": len(results)},
+                ensure_ascii=False,
+            )
         except Exception as e:
-            return _json_fail(f"{type(e).__name__}: {str(e)[:200]}")
+            return json.dumps(
+                {"ok": False, "data": [], "count": 0, "error": f"{type(e).__name__}: {str(e)[:200]}"},
+                ensure_ascii=False,
+            )
 
-    @mcp.tool(description="检查雪球 token 配置状态及有效性")
+    @mcp.tool(
+        name="xueqiu_status",
+        description="检查雪球 token 配置状态及有效性",
+        annotations=_READ_ONLY,
+    )
     def xueqiu_status() -> str:
-        """检查雪球 token 配置状态。
-
-        Returns:
-            JSON 格式的状态信息
-        """
-        token = os.environ.get("XUEQIU_TOKEN", "")
-        if not token:
-            return json.dumps({
-                "ok": True,
-                "configured": False,
-                "message": "未设置 XUEQIU_TOKEN 环境变量",
-                "how_to": "登录 xueqiu.com → F12 → Application → Cookies → 复制 xq_a_token 值 → 设置环境变量 XUEQIU_TOKEN",
-            }, ensure_ascii=False)
-
-        # 简单验证一下
         try:
+            _ = _XueqiuStatusInput()
+            token = os.environ.get("XUEQIU_TOKEN", "")
+            if not token:
+                data = [
+                    {
+                        "configured": False,
+                        "valid": False,
+                        "message": "未设置 XUEQIU_TOKEN 环境变量",
+                        "how_to": "登录 xueqiu.com → F12 → Application → Cookies → 复制 xq_a_token 值 → 设置环境变量 XUEQIU_TOKEN",
+                    }
+                ]
+                return json.dumps(
+                    {"ok": True, "data": data, "count": len(data)},
+                    ensure_ascii=False,
+                )
+
             requests, cookies = _get_session()
             if requests is None:
-                return json.dumps({"ok": True, "configured": True, "valid": False, "message": cookies}, ensure_ascii=False)
+                data = [{"configured": True, "valid": False, "message": cookies}]
+                return json.dumps(
+                    {"ok": True, "data": data, "count": len(data)},
+                    ensure_ascii=False,
+                )
+
             url = f"{XQ_API}/public_timeline_by_category.json"
-            resp = requests.get(url, headers=HEADERS, cookies=cookies,
-                                params={"since_id": -1, "max_id": -1, "count": 1, "category": -1},
-                                timeout=15)
+            resp = requests.get(
+                url,
+                headers=HEADERS,
+                cookies=cookies,
+                params={"since_id": -1, "max_id": -1, "count": 1, "category": -1},
+                timeout=15,
+            )
             data = resp.json()
             if isinstance(data, dict) and data.get("error_code") and data["error_code"] != 0:
-                return json.dumps({
-                    "ok": True,
-                    "configured": True,
-                    "valid": False,
-                    "message": f"token无效: {data.get('error_description', data['error_code'])}",
-                }, ensure_ascii=False)
+                result_data = [
+                    {
+                        "configured": True,
+                        "valid": False,
+                        "message": f"token无效: {data.get('error_description', data['error_code'])}",
+                    }
+                ]
+                return json.dumps(
+                    {"ok": True, "data": result_data, "count": len(result_data)},
+                    ensure_ascii=False,
+                )
+
             count = len(data.get("list", [])) if isinstance(data, dict) else 0
-            return json.dumps({
-                "ok": True,
-                "configured": True,
-                "valid": True,
-                "message": f"token有效，成功获取 {count} 条热门动态",
-            }, ensure_ascii=False)
+            result_data = [
+                {
+                    "configured": True,
+                    "valid": True,
+                    "message": f"token有效，成功获取 {count} 条热门动态",
+                }
+            ]
+            return json.dumps(
+                {"ok": True, "data": result_data, "count": len(result_data)},
+                ensure_ascii=False,
+            )
         except Exception as e:
-            return json.dumps({
-                "ok": True,
-                "configured": True,
-                "valid": False,
-                "message": f"验证失败: {type(e).__name__}: {str(e)[:100]}",
-            }, ensure_ascii=False)
+            return json.dumps(
+                {"ok": False, "data": [], "count": 0, "error": f"{type(e).__name__}: {str(e)[:200]}"},
+                ensure_ascii=False,
+            )
 
     return ["xueqiu_hot_posts", "xueqiu_stock_posts", "xueqiu_comments", "xueqiu_status"]

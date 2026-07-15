@@ -36,17 +36,15 @@ except ImportError:
     print("错误: 未安装 akshare，请运行: pip install akshare pandas", file=sys.stderr)
     sys.exit(1)
 
+from pydantic import BaseModel, Field
+
 from core.helpers import _df_to_records
 from core.tiers import Tier, TOOL_TIERS, tier_info
 from core.registry import SourceRegistry, load_custom_sources, call_unified
 from core.translate import _translate_records
-from core.tool_providers import (
-    get_tool_providers,
-    list_all_providers as _list_custom_providers,
-    list_tools_by_provider as _list_custom_tools_by_provider,
-)
 
 mcp = FastMCP("akshare")
+_READ_ONLY = {"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True}
 
 # ── 加载数据源 ──────────────────────────────────────────
 # 1. 从 YAML 配置自动注册简单源
@@ -59,7 +57,19 @@ _custom_tools = load_custom_sources(mcp)
 
 # ── 统一数据查询接口 ──────────────────────────────────────────
 
-@mcp.tool(description="统一数据查询接口：整合 akshare + axdata 两个数据源，自动路由到最佳来源，支持英文翻译和按需指定数据源")
+class _DataQueryInput(BaseModel):
+    interface: str = Field(..., description="接口名称（统一别名、axdata接口名或akshare函数名），如 stock_daily、limit_up_pool")
+    params_json: Optional[str] = Field(None, description="JSON 格式的参数字典，如 '{\"symbol\": \"600519\"}'")
+    limit: int = Field(0, ge=0, le=1000, description="返回条数限制，0=不限")
+    translate: bool = Field(True, description="是否翻译英文内容")
+    source_preference: str = Field("any", description="数据源偏好：any(自动)、axdata_only、akshare_only、或提供商名如 sina/eastmoney/cls")
+
+
+@mcp.tool(
+    name="data_query",
+    description="统一数据查询接口：整合 akshare + axdata，自动路由，支持按来源偏好按需调用",
+    annotations=_READ_ONLY,
+)
 def data_query(
     interface: str,
     params_json: Optional[str] = None,
@@ -67,55 +77,42 @@ def data_query(
     translate: bool = True,
     source_preference: str = "any",
 ) -> str:
-    """统一数据查询接口。
+    """统一数据查询入口。整合 akshare 和 axdata，自动路由到最佳来源。
 
-    整合 akshare 和 axdata 两个数据源，自动路由到最佳来源。
-    优先使用 axdata（字段更规范），失败时自动 fallback 到 akshare。
+    支持通过 source_preference 按需指定数据来源，避免全部跑一遍：
+    - "any" — 自动路由（axdata 优先，akshare fallback）
+    - "axdata_only" — 只调 axdata
+    - "akshare_only" — 只调 akshare
+    - "sina"/"eastmoney"/"cls" 等 — 只调该数据商的接口
 
-    支持三种调用方式：
-    1. 用统一别名（推荐）：interface="limit_up_pool"
-    2. 用 axdata 原始接口名：interface="eastmoney_limit_up_pool"
-    3. 用 akshare 函数名：interface="stock_zh_a_daily"
-
-    常用统一别名（完整列表用 data_interfaces 工具查看）：
-    - stock_daily: A股日K线
-    - stock_realtime: A股实时行情
-    - index_daily: 指数日K线
-    - etf_daily: ETF日K线
-    - futures_daily: 期货日线
-    - limit_up_pool: 涨停池
-    - sector_realtime: 板块实时行情
-    - cls_market_emotion: 财联社市场情绪
-    - global_news_em: 全球财经新闻（含翻译）
-
-    Args:
-        interface: 接口名称（统一别名、axdata接口名或akshare函数名）
-        params_json: JSON 格式的参数字典，如 {"symbol": "600519"}
-        limit: 返回条数限制，0=不限
-        translate: 是否翻译英文内容，默认 True
-        source_preference: 数据源偏好，可选：
-            - "any": 自动路由（默认）
-            - "axdata_only": 只调用 axdata
-            - "akshare_only": 只调用 akshare
-            - provider 名称: 如 "sina", "eastmoney", "cls" 等
+    三种调用方式：
+    1. 统一别名：stock_daily、limit_up_pool、cls_market_emotion
+    2. axdata 原始接口名：eastmoney_limit_up_pool
+    3. akshare 函数名：stock_zh_a_daily
 
     Returns:
-        JSON 格式的查询结果
+        JSON: {"ok": true/false, "data": [...], "count": N, "source": "...", "translated": true/false}
     """
     try:
-        params = json.loads(params_json) if params_json else {}
-        ok, data, source = call_unified(interface, _registry.sources, source_preference=source_preference, **params)
+        params = _DataQueryInput(
+            interface=interface, params_json=params_json, limit=limit,
+            translate=translate, source_preference=source_preference,
+        )
+        call_params = json.loads(params.params_json) if params.params_json else {}
+        ok, data, source = call_unified(
+            params.interface, _registry.sources, source_preference=params.source_preference, **call_params
+        )
 
         if not ok:
             err = data[0].get("error", "未知错误") if data else "未知错误"
-            return json.dumps({"ok": False, "interface": interface, "source": source, "error": err}, ensure_ascii=False)
+            return json.dumps({"ok": False, "data": [], "count": 0, "source": source, "error": err}, ensure_ascii=False)
 
-        if limit and len(data) > limit:
-            data = data[:limit]
+        if params.limit and len(data) > params.limit:
+            data = data[:params.limit]
 
         translated = False
-        if translate and data:
-            cfg = _registry.sources.get(interface)
+        if params.translate and data:
+            cfg = _registry.sources.get(params.interface)
             if cfg:
                 tfields = set()
                 for src_key in ("axdata", "akshare"):
@@ -127,20 +124,20 @@ def data_query(
                     translated = True
 
         return json.dumps({
-            "ok": True, "interface": interface, "source": source,
+            "ok": True, "interface": params.interface, "source": source,
             "count": len(data), "translated": translated, "data": data,
         }, ensure_ascii=False)
     except Exception as e:
-        return json.dumps({"ok": False, "interface": interface, "error": f"{type(e).__name__}: {str(e)[:200]}"}, ensure_ascii=False)
+        return json.dumps({"ok": False, "data": [], "count": 0, "error": f"{type(e).__name__}: {str(e)[:200]}"}, ensure_ascii=False)
 
 
-@mcp.tool(description="列出所有可用的统一数据接口及其数据源映射")
+@mcp.tool(
+    name="data_interfaces",
+    description="列出所有可用的统一数据接口及其描述、数据源配置",
+    annotations=_READ_ONLY,
+)
 def data_interfaces() -> str:
-    """列出所有可用的统一数据接口。
-
-    Returns:
-        JSON 格式的接口映射表
-    """
+    """列出 YAML 配置中所有可用的统一数据接口。"""
     interfaces = []
     for alias, cfg in _registry.sources.items():
         axdata_iface = cfg.get("axdata", {}).get("interface") if cfg.get("axdata") else None
@@ -148,188 +145,57 @@ def data_interfaces() -> str:
         interfaces.append({
             "alias": alias,
             "description": cfg.get("desc", ""),
-            "providers": cfg.get("providers", []),
             "axdata_interface": axdata_iface,
             "akshare_function": akshare_func,
             "priority": "axdata" if axdata_iface else ("akshare" if akshare_func else "none"),
         })
     return json.dumps({
-        "ok": True,
-        "count": len(interfaces),
-        "note": "data_query 支持用 alias、axdata_interface 或 akshare_function 调用；可用 list_interfaces_by_source 按来源分类查看",
+        "ok": True, "count": len(interfaces),
+        "note": "data_query 支持用 alias、axdata_interface 或 akshare_function 调用",
         "interfaces": interfaces,
     }, ensure_ascii=False)
 
 
-@mcp.tool(description="列出所有数据来源提供商（如 sina、eastmoney、cls 等）")
-def list_source_providers() -> str:
-    """列出所有数据来源提供商。
-
-    返回 YAML 配置接口和自定义工具中涉及的所有数据提供商。
-
-    Returns:
-        JSON 格式的提供商列表及各自工具数量
-    """
-    try:
-        # 从 YAML 配置收集
-        yaml_providers = _registry.get_providers()
-        # 从自定义工具收集
-        custom_providers = _list_custom_providers()
-        all_providers = yaml_providers | custom_providers
-
-        result = {}
-        for p in sorted(all_providers):
-            yaml_tools = list(_registry.list_by_provider(p).keys())
-            custom_tools = _list_custom_tools_by_provider(p)
-            result[p] = {
-                "yaml_interfaces": yaml_tools,
-                "custom_tools": custom_tools,
-                "total_count": len(yaml_tools) + len(custom_tools),
-            }
-
-        return json.dumps({
-            "ok": True,
-            "count": len(result),
-            "providers": result,
-        }, ensure_ascii=False)
-    except Exception as e:
-        return json.dumps({"ok": False, "error": f"{type(e).__name__}: {str(e)[:200]}"}, ensure_ascii=False)
-
-
-@mcp.tool(description="按数据来源提供商分类列出所有接口和工具")
+@mcp.tool(
+    name="list_interfaces_by_source",
+    description="按数据来源提供商分类列出 YAML 配置的接口",
+    annotations=_READ_ONLY,
+)
 def list_interfaces_by_source(provider: str = "") -> str:
-    """按数据来源提供商筛选并列出接口和工具。
-
-    Args:
-        provider: 提供商名称，如 sina、eastmoney、cls、tencent、ths 等。
-                 传入空字符串则返回所有提供商的分类汇总。
-
-    Returns:
-        JSON 格式的分类结果
-    """
+    """按数据来源提供商分类列出接口。provider 为空则返回所有提供商汇总。"""
     try:
         if not provider:
-            # 返回所有提供商的分类汇总
-            all_providers = _registry.get_providers() | _list_custom_providers()
+            all_providers = _registry.get_providers()
             summary = {}
             for p in sorted(all_providers):
                 yaml_tools = list(_registry.list_by_provider(p).keys())
-                custom_tools = _list_custom_tools_by_provider(p)
-                summary[p] = {
-                    "yaml_interfaces": yaml_tools,
-                    "custom_tools": custom_tools,
-                    "total_count": len(yaml_tools) + len(custom_tools),
-                }
-            return json.dumps({
-                "ok": True,
-                "count": len(summary),
-                "note": "传入 provider 参数可查看某个提供商的详细接口信息",
-                "by_provider": summary,
-            }, ensure_ascii=False)
+                summary[p] = {"yaml_interfaces": yaml_tools, "count": len(yaml_tools)}
+            return json.dumps({"ok": True, "count": len(summary), "by_provider": summary}, ensure_ascii=False)
 
-        # 返回指定提供商的详细接口
         provider_lower = provider.lower()
         yaml_interfaces = _registry.list_by_provider(provider_lower)
-        custom_tools = _list_custom_tools_by_provider(provider_lower)
-
         yaml_detail = []
         for alias, cfg in yaml_interfaces.items():
             yaml_detail.append({
-                "alias": alias,
-                "description": cfg.get("desc", ""),
-                "providers": cfg.get("providers", []),
+                "alias": alias, "description": cfg.get("desc", ""),
                 "axdata_interface": cfg.get("axdata", {}).get("interface") if cfg.get("axdata") else None,
                 "akshare_function": cfg.get("akshare", {}).get("func") if cfg.get("akshare") else None,
             })
-
         return json.dumps({
-            "ok": True,
-            "provider": provider,
-            "yaml_interfaces": yaml_detail,
-            "custom_tools": custom_tools,
-            "total_count": len(yaml_detail) + len(custom_tools),
+            "ok": True, "provider": provider,
+            "yaml_interfaces": yaml_detail, "count": len(yaml_detail),
         }, ensure_ascii=False)
     except Exception as e:
         return json.dumps({"ok": False, "error": f"{type(e).__name__}: {str(e)[:200]}"}, ensure_ascii=False)
 
 
-@mcp.tool(description="按指定数据来源查询数据，只调用该来源的接口，不会全部跑一遍")
-def query_by_source(
-    provider: str,
-    interface: str,
-    params_json: Optional[str] = None,
-    limit: int = 0,
-    translate: bool = True,
-) -> str:
-    """按指定数据来源提供商查询数据，实现按需调用。
-
-    只调用指定 provider 的接口，不会 fallback 到其他来源。
-    适合明确知道数据来源、不想触发多源调用的场景。
-
-    Args:
-        provider: 数据来源提供商，如 sina、eastmoney、cls、tencent 等
-        interface: 接口名称（统一别名）
-        params_json: JSON 格式的参数字典
-        limit: 返回条数限制，0=不限
-        translate: 是否翻译英文内容，默认 True
-
-    Returns:
-        JSON 格式的查询结果
-    """
-    try:
-        cfg = _registry.get_source(interface)
-        if not cfg:
-            return json.dumps({
-                "ok": False,
-                "error": f"接口 {interface} 不存在",
-            }, ensure_ascii=False)
-
-        providers = [p.lower() for p in cfg.get("providers", [])]
-        if provider.lower() not in providers:
-            return json.dumps({
-                "ok": False,
-                "error": f"接口 {interface} 不支持 provider '{provider}'，支持的 providers: {cfg.get('providers', [])}",
-            }, ensure_ascii=False)
-
-        params = json.loads(params_json) if params_json else {}
-        ok, data, source = call_unified(interface, _registry.sources, source_preference=provider, **params)
-
-        if not ok:
-            err = data[0].get("error", "未知错误") if data else "未知错误"
-            return json.dumps({"ok": False, "interface": interface, "provider": provider, "source": source, "error": err}, ensure_ascii=False)
-
-        if limit and len(data) > limit:
-            data = data[:limit]
-
-        translated = False
-        if translate and data:
-            tfields = set()
-            for src_key in ("axdata", "akshare"):
-                src_cfg = cfg.get(src_key)
-                if src_cfg and src_cfg.get("translate_fields"):
-                    tfields.update(src_cfg["translate_fields"])
-            if tfields:
-                _translate_records(data, fields=tfields, translate=True)
-                translated = True
-
-        return json.dumps({
-            "ok": True, "interface": interface, "provider": provider, "source": source,
-            "count": len(data), "translated": translated, "data": data,
-        }, ensure_ascii=False)
-    except Exception as e:
-        return json.dumps({"ok": False, "interface": interface, "error": f"{type(e).__name__}: {str(e)[:200]}"}, ensure_ascii=False)
-
-
-@mcp.tool(description="查询工具的数据源等级（L0-L3）和兜底链路")
+@mcp.tool(
+    name="tool_tier_info",
+    description="查询工具的数据源等级（L0-L3）和兜底链路",
+    annotations=_READ_ONLY,
+)
 def tool_tier_info(tool_name: str = "") -> str:
-    """查询工具的 L0-L3 等级和兜底信息。
-
-    Args:
-        tool_name: 工具名（可选），传入则查单个；不传则列出所有
-
-    Returns:
-        JSON 格式的工具等级信息
-    """
+    """查询工具的 L0-L3 等级和兜底信息。传入 tool_name 查单个，否则列出所有。"""
     if tool_name:
         info = tier_info(tool_name)
         return json.dumps({
@@ -356,16 +222,13 @@ def tool_tier_info(tool_name: str = "") -> str:
     }, ensure_ascii=False)
 
 
-@mcp.tool(description="重新加载数据源配置（热更新，无需重启服务）")
+@mcp.tool(
+    name="reload_sources",
+    description="重新加载数据源配置（热更新，无需重启服务）",
+    annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False},
+)
 def reload_sources() -> str:
-    """重新加载 data_sources.yaml 配置文件。
-
-    修改 YAML 后调用此工具即可热更新，无需重启服务。
-    注意：已注册的 MCP 工具不会消失，但 data_query 的路由会更新。
-
-    Returns:
-        JSON 结果，包含当前源数量
-    """
+    """重新加载 data_sources.yaml 配置文件。修改 YAML 后调用即可热更新。"""
     try:
         _registry.reload()
         sources = _registry.list_sources()
@@ -487,7 +350,7 @@ def _start_scheduler_if_needed():
 
 # ─────────────── 记忆/存储管理工具 ───────────────
 
-@mcp.tool(description="查询存储统计：新闻数、行情快照数、记忆数、调度任务数")
+@mcp.tool(name="memory_stats", description="查询存储统计：新闻数、行情快照数、记忆数、调度任务数", annotations=_READ_ONLY)
 def memory_stats() -> str:
     """获取存储层统计信息。"""
     try:
@@ -500,7 +363,7 @@ def memory_stats() -> str:
         return json.dumps({"ok": False, "error": f"{type(e).__name__}: {str(e)[:200]}"}, ensure_ascii=False)
 
 
-@mcp.tool(description="查询历史新闻数据，支持按来源/关键词过滤")
+@mcp.tool(name="memory_query_news", description="查询历史新闻数据，支持按来源/关键词过滤", annotations=_READ_ONLY)
 def memory_query_news(source: Optional[str] = None, keyword: Optional[str] = None,
                       limit: int = 50, offset: int = 0) -> str:
     """从 SQLite 查询已保存的历史新闻数据。
@@ -519,7 +382,7 @@ def memory_query_news(source: Optional[str] = None, keyword: Optional[str] = Non
         return json.dumps({"ok": False, "error": f"{type(e).__name__}: {str(e)[:200]}"}, ensure_ascii=False)
 
 
-@mcp.tool(description="写入通用记忆（key-value），供 agent 长期保存信息")
+@mcp.tool(name="memory_set", description="写入通用记忆（key-value），供 agent 长期保存信息", annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False})
 def memory_set(key: str, value: str, tags: str = "") -> str:
     """写入一条通用记忆。
 
@@ -536,7 +399,7 @@ def memory_set(key: str, value: str, tags: str = "") -> str:
         return json.dumps({"ok": False, "error": f"{type(e).__name__}: {str(e)[:200]}"}, ensure_ascii=False)
 
 
-@mcp.tool(description="读取通用记忆")
+@mcp.tool(name="memory_get", description="读取通用记忆", annotations=_READ_ONLY)
 def memory_get(key: str) -> str:
     """读取一条通用记忆。
 
@@ -553,7 +416,7 @@ def memory_get(key: str) -> str:
         return json.dumps({"ok": False, "error": f"{type(e).__name__}: {str(e)[:200]}"}, ensure_ascii=False)
 
 
-@mcp.tool(description="搜索通用记忆，支持关键词和标签过滤")
+@mcp.tool(name="memory_search", description="搜索通用记忆，支持关键词和标签过滤", annotations=_READ_ONLY)
 def memory_search(keyword: str = "", tag: str = "", limit: int = 50) -> str:
     """搜索通用记忆。
 
@@ -570,7 +433,7 @@ def memory_search(keyword: str = "", tag: str = "", limit: int = 50) -> str:
         return json.dumps({"ok": False, "error": f"{type(e).__name__}: {str(e)[:200]}"}, ensure_ascii=False)
 
 
-@mcp.tool(description="删除通用记忆")
+@mcp.tool(name="memory_delete", description="删除通用记忆", annotations={"readOnlyHint": False, "destructiveHint": True, "idempotentHint": True, "openWorldHint": False})
 def memory_delete(key: str) -> str:
     """删除一条通用记忆。
 
@@ -585,7 +448,7 @@ def memory_delete(key: str) -> str:
         return json.dumps({"ok": False, "error": f"{type(e).__name__}: {str(e)[:200]}"}, ensure_ascii=False)
 
 
-@mcp.tool(description="清理历史新闻数据，可按来源或天数过滤")
+@mcp.tool(name="memory_clear_news", description="清理历史新闻数据，可按来源或天数过滤", annotations={"readOnlyHint": False, "destructiveHint": True, "idempotentHint": False, "openWorldHint": False})
 def memory_clear_news(source: Optional[str] = None, days: Optional[int] = None) -> str:
     """清理历史新闻数据。
 
@@ -603,7 +466,7 @@ def memory_clear_news(source: Optional[str] = None, days: Optional[int] = None) 
 
 # ─────────────── 调度器管理工具 ───────────────
 
-@mcp.tool(description="列出所有定时调度任务及其状态")
+@mcp.tool(name="scheduler_list", description="列出所有定时调度任务及其状态", annotations=_READ_ONLY)
 def scheduler_list() -> str:
     """列出所有调度任务。"""
     try:
@@ -615,7 +478,7 @@ def scheduler_list() -> str:
         return json.dumps({"ok": False, "error": f"{type(e).__name__}: {str(e)[:200]}"}, ensure_ascii=False)
 
 
-@mcp.tool(description="添加定时任务，支持 cron 表达式或间隔分钟")
+@mcp.tool(name="scheduler_add", description="添加定时任务，支持 cron 表达式或间隔分钟", annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False})
 def scheduler_add(
     task_name: str,
     task_type: str,
@@ -652,7 +515,7 @@ def scheduler_add(
         return json.dumps({"ok": False, "error": f"{type(e).__name__}: {str(e)[:200]}"}, ensure_ascii=False)
 
 
-@mcp.tool(description="删除定时任务")
+@mcp.tool(name="scheduler_remove", description="删除定时任务", annotations={"readOnlyHint": False, "destructiveHint": True, "idempotentHint": True, "openWorldHint": False})
 def scheduler_remove(task_name: str) -> str:
     """删除一个定时任务。
 
@@ -667,7 +530,7 @@ def scheduler_remove(task_name: str) -> str:
         return json.dumps({"ok": False, "error": f"{type(e).__name__}: {str(e)[:200]}"}, ensure_ascii=False)
 
 
-@mcp.tool(description="暂停定时任务")
+@mcp.tool(name="scheduler_pause", description="暂停定时任务", annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False})
 def scheduler_pause(task_name: str) -> str:
     """暂停一个定时任务。
 
@@ -682,7 +545,7 @@ def scheduler_pause(task_name: str) -> str:
         return json.dumps({"ok": False, "error": f"{type(e).__name__}: {str(e)[:200]}"}, ensure_ascii=False)
 
 
-@mcp.tool(description="恢复定时任务")
+@mcp.tool(name="scheduler_resume", description="恢复定时任务", annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False})
 def scheduler_resume(task_name: str) -> str:
     """恢复一个已暂停的定时任务。
 
@@ -698,7 +561,7 @@ def scheduler_resume(task_name: str) -> str:
         return json.dumps({"ok": False, "error": f"{type(e).__name__}: {str(e)[:200]}"}, ensure_ascii=False)
 
 
-@mcp.tool(description="立即执行一次定时任务（手动触发）")
+@mcp.tool(name="scheduler_run_now", description="立即执行一次定时任务（手动触发）", annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": True})
 def scheduler_run_now(task_name: str) -> str:
     """立即手动执行一次任务。
 
@@ -713,7 +576,7 @@ def scheduler_run_now(task_name: str) -> str:
         return json.dumps({"ok": False, "error": f"{type(e).__name__}: {str(e)[:200]}"}, ensure_ascii=False)
 
 
-@mcp.tool(description="查询任务执行日志")
+@mcp.tool(name="scheduler_logs", description="查询任务执行日志", annotations=_READ_ONLY)
 def scheduler_logs(task_name: Optional[str] = None, limit: int = 50) -> str:
     """查询任务执行历史日志。
 
@@ -731,7 +594,7 @@ def scheduler_logs(task_name: Optional[str] = None, limit: int = 50) -> str:
 
 # ─────────────── WebSocket 推送管理工具 ───────────────
 
-@mcp.tool(description="查询 WebSocket 推送服务状态：连接数、订阅分布、服务地址")
+@mcp.tool(name="ws_status", description="查询 WebSocket 推送服务状态：连接数、订阅分布、服务地址", annotations=_READ_ONLY)
 def ws_status() -> str:
     """获取 WebSocket 推送服务状态。
 
